@@ -73,8 +73,8 @@ val OAuth2ClientAuthenticationTest by testSuite {
                     url = "https://example.com/",
                     method = HttpMethod.Post,
                     dpop = null,
-                    clientAttestation = this.clientAttestation,
-                    clientAttestationPop = clientAttestationPop
+                    clientAttestation = this.clientAttestation.toString(),
+                    clientAttestationPop = clientAttestationPop.toString()
                 )
             ).getOrThrow()
         }
@@ -91,8 +91,8 @@ val OAuth2ClientAuthenticationTest by testSuite {
                 RequestInfo(
                     url = "https://example.com/",
                     method = HttpMethod.Post,
-                    clientAttestation = it.clientAttestation,
-                    clientAttestationPop = it.clientAttestationPop
+                    clientAttestation = it.clientAttestation.toString(),
+                    clientAttestationPop = it.clientAttestationPop.toString()
                 )
             ).getOrThrow()
                 .shouldBeInstanceOf<PushedAuthenticationResponseParameters>()
@@ -112,8 +112,8 @@ val OAuth2ClientAuthenticationTest by testSuite {
                     url = "https://example.com/",
                     method = HttpMethod.Get,
                     dpop = null,
-                    clientAttestation = it.clientAttestation,
-                    clientAttestationPop = it.clientAttestationPop
+                    clientAttestation = it.clientAttestation.toString(),
+                    clientAttestationPop = it.clientAttestationPop.toString()
                 )
             ).getOrThrow()
                 .shouldBeInstanceOf<TokenIntrospectionResponse>()
@@ -140,8 +140,8 @@ val OAuth2ClientAuthenticationTest by testSuite {
                     RequestInfo(
                         url = "https://example.com/",
                         method = HttpMethod.Post,
-                        clientAttestation = it.clientAttestation,
-                        clientAttestationPop = it.clientAttestationPop
+                        clientAttestation = it.clientAttestation.toString(),
+                        clientAttestationPop = it.clientAttestationPop.toString()
                     )
                 ).getOrThrow()
             }
@@ -168,8 +168,8 @@ val OAuth2ClientAuthenticationTest by testSuite {
                     RequestInfo(
                         url = "https://example.com/",
                         method = HttpMethod.Post,
-                        clientAttestation = it.clientAttestation,
-                        clientAttestationPop = it.clientAttestationPop
+                        clientAttestation = it.clientAttestation.toString(),
+                        clientAttestationPop = it.clientAttestationPop.toString()
                     )
                 ).getOrThrow()
             }
@@ -210,8 +210,8 @@ val OAuth2ClientAuthenticationTest by testSuite {
                     url = "https://example.com/",
                     method = HttpMethod.Get,
                     dpop = null,
-                    clientAttestation = it.clientAttestation,
-                    clientAttestationPop = it.clientAttestationPop
+                    clientAttestation = it.clientAttestation.toString(),
+                    clientAttestationPop = it.clientAttestationPop.toString()
                 )
             ).getOrThrow()
                 .shouldBeInstanceOf<TokenIntrospectionResponse>()
