@@ -33,19 +33,12 @@ internal class AuthorizationRequestValidator(
         if (request.parameters.responseMode.isAnyDcApi()) {
             request.validateDcApi()
         }
-        val clientIdScheme = request.parameters.clientIdSchemeExtracted
-        if (clientIdScheme == ClientIdScheme.RedirectUri) {
-            request.parameters.verifyClientMetadata()
-        }
+        request.verifyClientIdScheme()
+
         if (request.parameters.responseMode.isAnyDirectPost()) {
             request.parameters.verifyResponseModeDirectPost()
         }
-        if (clientIdScheme.isAnyX509()) {
-            request.verifyClientIdSchemeX509()
-        }
-        if (clientIdScheme is ClientIdScheme.RedirectUri) {
-            request.parameters.verifyRedirectUrl()
-        }
+
         if (request.isFromRequestObject()) {
             request.parameters.walletNonce?.let {
                 if (walletNonceMapStore.remove(it) != it) {
@@ -56,6 +49,19 @@ internal class AuthorizationRequestValidator(
         // TODO Verifier Attestation JWT from OpenId4VP 11. also redirect_uri in there
     }
 
+    private fun RequestParametersFrom<AuthenticationRequestParameters>.verifyClientIdScheme() {
+        val clientIdScheme = this.parseClientId()
+        if (clientIdScheme == ClientIdScheme.RedirectUri) {
+            this.parameters.verifyClientMetadata()
+        }
+        if (clientIdScheme.isAnyX509()) {
+            this.verifyClientIdSchemeX509()
+        }
+        if (clientIdScheme is ClientIdScheme.RedirectUri) {
+            this.parameters.verifyRedirectUrl()
+        }
+    }
+
     private fun RequestParametersFrom<AuthenticationRequestParameters>.validateDcApi() {
         when (this) {
             is RequestParametersFrom.DcApiUnsigned<*> -> {
@@ -64,7 +70,7 @@ internal class AuthorizationRequestValidator(
             }
 
             is RequestParametersFrom.DcApiRequest -> {
-                parameters.verifyClientIdPresent()
+                this.verifyClientIdPresent()
                 parameters.verifyExpectedOrigin(this.dcApiRequest.callingOrigin)
             }
 
@@ -95,17 +101,30 @@ internal class AuthorizationRequestValidator(
     }
 
     @Throws(OAuth2Exception::class)
-    private fun AuthenticationRequestParameters.verifyClientIdPresent() {
-        if (clientId == null) {
+    private fun RequestParametersFrom<AuthenticationRequestParameters>.parseClientId() =
+        //Assume client_id must be the same for all signatures where it is present?
+        if (this is RequestParametersFrom.DcApiMultiSigned) {
+            jws.jwsHeaders.firstNotNullOf { it.clientId?.let { ClientIdScheme.decodeFromClientId(it) } }
+        } else parameters.clientIdSchemeExtracted
+
+    @Throws(OAuth2Exception::class)
+    private fun RequestParametersFrom<AuthenticationRequestParameters>.verifyClientIdPresent() {
+        //Assume client_id must be the same for all signatures where it is present?
+        if (this is RequestParametersFrom.DcApiMultiSigned) {
+            jws.jwsHeaders.any { it.clientId != null }
+        }
+        if (parameters.clientId == null) {
             throw InvalidRequest("client_id is null")
         }
     }
 
     @Throws(OAuth2Exception::class)
     private fun RequestParametersFrom<AuthenticationRequestParameters>.verifyClientIdSchemeX509() {
-        val clientIdScheme = parameters.clientIdSchemeExtracted
+        val clientIdScheme = this.parseClientId()
         val responseModeIsDirectPost = parameters.responseMode.isAnyDirectPost()
         val responseModeIsDcApi = parameters.responseMode.isAnyDcApi()
+
+        //TODO allow jws to be General
         if (this !is RequestParametersFrom.RequestParametersSigned<AuthenticationRequestParameters>
             || (jws as JwsCompact).jwsHeader.certificateChain.isNullOrEmpty()
         ) {
