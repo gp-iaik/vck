@@ -55,16 +55,16 @@ internal class AuthorizationRequestValidator(
         val clientIdSchemes = parseClientIds()
         if (clientIdSchemes.isEmpty()) return
 
-        clientIdSchemes.any { (clientId, clientIdScheme) ->
+        clientIdSchemes.any { (clientIdWithoutPrefix, clientIdScheme) ->
             when (clientIdScheme) {
                 ClientIdScheme.RedirectUri -> {
                     parameters.verifyClientMetadata()
-                    parameters.verifyRedirectUrl()
+                    parameters.verifyRedirectUrl(clientIdWithoutPrefix)
                     true
                 }
 
                 ClientIdScheme.X509SanDns, ClientIdScheme.X509Hash -> {
-                    verifyClientIdSchemeX509(clientId)
+                    verifyClientIdSchemeX509(clientIdWithoutPrefix, clientIdScheme)
                     true
                 }
 
@@ -93,7 +93,7 @@ internal class AuthorizationRequestValidator(
         this is RequestParametersFrom.Json || this is RequestParametersFrom.Jws
 
     @Throws(OAuth2Exception::class)
-    private fun AuthenticationRequestParameters.verifyRedirectUrl() {
+    private fun AuthenticationRequestParameters.verifyRedirectUrl(clientIdWithoutPrefix: String) {
         if (redirectUrl != null) {
             if (clientIdWithoutPrefix != redirectUrl) {
                 throw InvalidRequest("client_id $clientIdWithoutPrefix not matching redirect_uri $redirectUrl")
@@ -108,12 +108,21 @@ internal class AuthorizationRequestValidator(
         }
     }
 
+    /**
+     * Returns list of all ClientIds without prefix plus the associated [ClientIdScheme]
+     */
     @Throws(OAuth2Exception::class)
     private fun RequestParametersFrom<AuthenticationRequestParameters>.parseClientIds(): Map<String, ClientIdScheme> =
         //Assume client_id must be the same for all signatures where it is present?
         if (this is RequestParametersFrom.DcApiMultiSigned) {
-            jws.jwsHeaders.mapNotNull { it.clientId?.let { it to ClientIdScheme.decodeFromClientId(it) } }.toMap()
-        } else parameters.clientId?.let { mapOf(it to parameters.clientIdSchemeExtracted!!) } ?: emptyMap()
+            jws.jwsHeaders.mapNotNull {
+                it.clientId?.let { clientId ->
+                    ClientIdScheme.decodeFromClientId(clientId).let {
+                        clientId.removePrefix("$it:") to it
+                    }
+                }
+            }.toMap()
+        } else parameters.clientIdWithoutPrefix?.let { mapOf(it to parameters.clientIdSchemeExtracted!!) } ?: emptyMap()
 
     @Throws(OAuth2Exception::class)
     private fun RequestParametersFrom<AuthenticationRequestParameters>.verifyClientIdPresent() {
@@ -126,7 +135,10 @@ internal class AuthorizationRequestValidator(
     }
 
     @Throws(OAuth2Exception::class)
-    private fun RequestParametersFrom<AuthenticationRequestParameters>.verifyClientIdSchemeX509(clientId: String) {
+    private fun RequestParametersFrom<AuthenticationRequestParameters>.verifyClientIdSchemeX509(
+        clientIdWithoutPrefix: String,
+        clientIdScheme: ClientIdScheme
+    ) {
         val responseModeIsDirectPost = parameters.responseMode.isAnyDirectPost()
         val responseModeIsDcApi = parameters.responseMode.isAnyDcApi()
         if (this !is RequestParametersFrom.RequestParametersSigned<AuthenticationRequestParameters>) throw InvalidRequest(
@@ -135,7 +147,7 @@ internal class AuthorizationRequestValidator(
 
         val certificateChains = when (val jws = this.jws) {
             is JwsGeneral -> jws.jwsHeaders.filter {
-                it.clientId == clientId
+                it.clientId == "${clientIdScheme.stringRepresentation}:$clientIdWithoutPrefix"
             }.mapNotNull { it.certificateChain }
 
             is JwsCompact -> listOfNotNull(jws.jwsHeader.certificateChain)
@@ -145,14 +157,14 @@ internal class AuthorizationRequestValidator(
         if (certificateChains.isEmpty()) throw InvalidRequest("x5c is null, and metadata is not set")
 
         certificateChains.any { cert ->
-            when (val clientIdScheme = ClientIdScheme.decodeFromClientId(clientId)) {
+            when (clientIdScheme) {
                 ClientIdScheme.X509SanDns -> {
-                    verifyX509SanDns(cert.leaf, clientId, responseModeIsDirectPost, responseModeIsDcApi)
+                    verifyX509SanDns(cert.leaf, clientIdWithoutPrefix, responseModeIsDirectPost, responseModeIsDcApi)
                     true
                 }
 
                 ClientIdScheme.X509Hash -> {
-                    verifyX509SanHash(cert.leaf)
+                    verifyX509SanHash(cert.leaf, clientIdWithoutPrefix)
                     true
                 }
                 // checked before calling this method
@@ -164,17 +176,16 @@ internal class AuthorizationRequestValidator(
 
     private fun RequestParametersFrom.RequestParametersSigned<AuthenticationRequestParameters>.verifyX509SanDns(
         leaf: X509Certificate,
-        clientId: String,
+        clientIdWithoutPrefix: String,
         responseModeIsDirectPost: Boolean,
         responseModeIsDcApi: Boolean,
     ) {
-        val client = clientId.removePrefix("${ClientIdScheme.X509SanDns.stringRepresentation}:")
         if (leaf.tbsCertificate.extensions == null || leaf.tbsCertificate.extensions!!.isEmpty()) {
             throw InvalidRequest("no extensions in x5c")
         }
         val dnsNames = leaf.tbsCertificate.subjectAlternativeNames?.dnsNames
             ?: throw InvalidRequest("no dnsNames in x5c")
-        if (!dnsNames.contains(client)) {
+        if (!dnsNames.contains(clientIdWithoutPrefix)) {
             throw InvalidRequest("client_id not in dnsNames in x5c $dnsNames")
         }
         if (!responseModeIsDirectPost && !responseModeIsDcApi) {
@@ -182,7 +193,7 @@ internal class AuthorizationRequestValidator(
                 ?: throw InvalidRequest("redirect_uri is null")
             //TODO  If the Wallet can establish trust in the Client Identifier authenticated through the
             // certificate it may allow the client to freely choose the redirect_uri value
-            if (parsedUrl.host != client) {
+            if (parsedUrl.host != clientIdWithoutPrefix) {
                 throw InvalidRequest("client_id not in redirect_uri $parsedUrl")
             }
         }
@@ -190,27 +201,29 @@ internal class AuthorizationRequestValidator(
 
     private fun RequestParametersFrom.RequestParametersSigned<AuthenticationRequestParameters>.verifyX509SanUri(
         leaf: X509Certificate,
+        clientIdWithoutPrefix: String
     ) {
         if (leaf.tbsCertificate.extensions == null || leaf.tbsCertificate.extensions!!.isEmpty()) {
             throw InvalidRequest("no extensions in x5c")
         }
         val uris = leaf.tbsCertificate.subjectAlternativeNames?.uris
             ?: throw InvalidRequest("no SAN in x5c")
-        if (!uris.contains(parameters.clientIdWithoutPrefix)) {
+        if (!uris.contains(clientIdWithoutPrefix)) {
             throw InvalidRequest("client_id not in SAN in x5c $uris")
         }
-        if (parameters.clientIdWithoutPrefix != parameters.redirectUrl) {
+        if (clientIdWithoutPrefix != parameters.redirectUrl) {
             throw InvalidRequest("client_id not in redirect_uri ${parameters.redirectUrl}")
         }
     }
 
     private fun RequestParametersFrom.RequestParametersSigned<AuthenticationRequestParameters>.verifyX509SanHash(
         leaf: X509Certificate,
+        clientIdWithoutPrefix: String
     ) {
         val calculatedHash = leaf.encodeToDerSafe()
             .getOrElse { throw InvalidRequest("Could not encode certificate to DER", it) }
             .sha256().encodeToString(Base64UrlStrict)
-        if (calculatedHash != parameters.clientIdWithoutPrefix) {
+        if (calculatedHash != clientIdWithoutPrefix) {
             throw InvalidRequest("hash of certificate (${calculatedHash}) is not equal to client_id")
         }
     }
