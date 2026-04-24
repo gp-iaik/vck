@@ -50,15 +50,22 @@ internal class AuthorizationRequestValidator(
     }
 
     private fun RequestParametersFrom<AuthenticationRequestParameters>.verifyClientIdScheme() {
-        val clientIdScheme = this.parseClientId()
-        if (clientIdScheme == ClientIdScheme.RedirectUri) {
-            this.parameters.verifyClientMetadata()
-        }
-        if (clientIdScheme.isAnyX509()) {
-            this.verifyClientIdSchemeX509()
-        }
-        if (clientIdScheme is ClientIdScheme.RedirectUri) {
-            this.parameters.verifyRedirectUrl()
+        val clientIdSchemes = parseClientIds()
+        if (clientIdSchemes.isEmpty()) return
+
+        clientIdSchemes.any {
+            when (it) {
+                ClientIdScheme.RedirectUri -> {
+                    parameters.verifyClientMetadata()
+                    parameters.verifyRedirectUrl()
+                    true
+                }
+                ClientIdScheme.X509SanDns, ClientIdScheme.X509Hash -> {
+                    verifyClientIdSchemeX509()
+                    true
+                }
+                else -> false
+            }
         }
     }
 
@@ -101,11 +108,11 @@ internal class AuthorizationRequestValidator(
     }
 
     @Throws(OAuth2Exception::class)
-    private fun RequestParametersFrom<AuthenticationRequestParameters>.parseClientId() =
+    private fun RequestParametersFrom<AuthenticationRequestParameters>.parseClientIds() =
         //Assume client_id must be the same for all signatures where it is present?
         if (this is RequestParametersFrom.DcApiMultiSigned) {
-            jws.jwsHeaders.firstNotNullOf { it.clientId?.let { ClientIdScheme.decodeFromClientId(it) } }
-        } else parameters.clientIdSchemeExtracted
+            jws.jwsHeaders.mapNotNull { it.clientId?.let { ClientIdScheme.decodeFromClientId(it) } }
+        } else listOfNotNull(parameters.clientIdSchemeExtracted)
 
     @Throws(OAuth2Exception::class)
     private fun RequestParametersFrom<AuthenticationRequestParameters>.verifyClientIdPresent() {
@@ -120,7 +127,7 @@ internal class AuthorizationRequestValidator(
 
     @Throws(OAuth2Exception::class)
     private fun RequestParametersFrom<AuthenticationRequestParameters>.verifyClientIdSchemeX509() {
-        val clientIdScheme = this.parseClientId()
+        val clientIdScheme = this.parseClientIds()
         val responseModeIsDirectPost = parameters.responseMode.isAnyDirectPost()
         val responseModeIsDcApi = parameters.responseMode.isAnyDcApi()
 
