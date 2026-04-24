@@ -97,9 +97,6 @@ internal class AuthorizationRequestValidator(
         }
     }
 
-    private fun ClientIdScheme?.isAnyX509() =
-        (this == ClientIdScheme.X509SanDns) || (this == ClientIdScheme.X509Hash)
-
     @Throws(OAuth2Exception::class)
     private fun AuthenticationRequestParameters.verifyClientMetadata() {
         if (clientMetadata == null) {
