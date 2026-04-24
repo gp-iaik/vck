@@ -34,6 +34,11 @@ value class ExchangeProtocolIdentifier(
         require(openIdVersion == PART_V1 || openIdVersion == null /* draft 24*/) {
             "Only version 1 is supported, got $openIdVersion"
         }
+        openId4VpRequestType?.let {
+            require(it == PART_UNSIGNED || it == PART_SIGNED || it == PART_MULTISIGNED) {
+                "Request type must be one of: unsigned, signed, multisigned"
+            }
+        }
     }
 
     init {
