@@ -3,6 +3,8 @@
 Release 6.0.0 (unreleased):
  - Add: ETSI data classes for list of trusted entities, [ETSI TS 119 602](https://www.etsi.org/deliver/etsi_ts/119600_119699/119602/01.01.01_60/ts_119602v010101p.pdf)
  - Remove code deprecated in 5.12.0
+ - Deprecations:
+   - Deprecate `vckJsonSerializer`, should be replaced with `joseCompliantSerializer` (Signum)
 
 Release 5.12.0:
  - W3C JWT VC:
