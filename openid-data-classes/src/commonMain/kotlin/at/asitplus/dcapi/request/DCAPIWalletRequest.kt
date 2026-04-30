@@ -1,6 +1,9 @@
 package at.asitplus.dcapi.request
 
-import at.asitplus.openid.RequestParameters
+import at.asitplus.openid.AuthenticationRequestParameters
+import at.asitplus.signum.indispensable.josef.JwsCompactTyped
+import at.asitplus.signum.indispensable.josef.JwsGeneralTyped
+import at.asitplus.signum.indispensable.josef.io.joseCompliantSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonClassDiscriminator
@@ -37,16 +40,45 @@ sealed interface DCAPIWalletRequest {
             get() = ExchangeProtocolIdentifier.ISO_MDOC_ANNEX_C
     }
 
-
-    sealed class OpenId4Vp {
-        abstract val protocol: ExchangeProtocolIdentifier
-        abstract val request: RequestParameters
+    sealed class OpenId4Vp : DCAPIWalletRequest {
+        abstract val request: String
+        abstract override val protocol: ExchangeProtocolIdentifier
     }
 
+    @ConsistentCopyVisibility
     @Serializable
-    data class OpenId4VpSigned(
+    data class OpenId4VpMultiSigned private constructor(
         @SerialName("request")
-        override val request: RequestParameters,
+        override val request: String,
+        @SerialName("credentialIds")
+        override val credentialIds: Collection<String>,
+        @SerialName("callingPackageName")
+        override val callingPackageName: String,
+        @SerialName("callingOrigin")
+        override val callingOrigin: String,
+    ) : OpenId4Vp() {
+
+        constructor(
+            request: JwsGeneralTyped<AuthenticationRequestParameters>,
+            credentialIds: List<String>,
+            callingPackageName: String,
+            callingOrigin: String,
+        ) : this(
+            request = joseCompliantSerializer.encodeToString(request),
+            credentialIds = credentialIds,
+            callingPackageName = callingPackageName,
+            callingOrigin = callingOrigin
+        )
+
+        override val protocol: ExchangeProtocolIdentifier
+            get() = ExchangeProtocolIdentifier.OPENID4VP_V1_MULTISIGNED
+    }
+
+    @ConsistentCopyVisibility
+    @Serializable
+    data class OpenId4VpSigned private constructor(
+        @SerialName("request")
+        override val request: String,
         @SerialName("credentialIds")
         override val credentialIds: Collection<String>,
         @SerialName("callingPackageName")
@@ -54,16 +86,29 @@ sealed interface DCAPIWalletRequest {
         @SerialName("callingOrigin")
         override val callingOrigin: String,
     ) : DCAPIWalletRequest, OpenId4Vp() {
+
+        constructor(
+            request: JwsCompactTyped<AuthenticationRequestParameters>,
+            credentialIds: List<String>,
+            callingPackageName: String,
+            callingOrigin: String,
+        ) : this(
+            request = request.jws.toString(),
+            credentialIds = credentialIds,
+            callingPackageName = callingPackageName,
+            callingOrigin = callingOrigin
+        )
 
         override val protocol: ExchangeProtocolIdentifier
             get() = ExchangeProtocolIdentifier.OPENID4VP_V1_SIGNED
     }
 
 
+    @ConsistentCopyVisibility
     @Serializable
-    data class OpenId4VpUnsigned(
+    data class OpenId4VpUnsigned private constructor(
         @SerialName("request")
-        override val request: RequestParameters,
+        override val request: String,
         @SerialName("credentialIds")
         override val credentialIds: Collection<String>,
         @SerialName("callingPackageName")
@@ -71,6 +116,18 @@ sealed interface DCAPIWalletRequest {
         @SerialName("callingOrigin")
         override val callingOrigin: String,
     ) : DCAPIWalletRequest, OpenId4Vp() {
+
+        constructor(
+            request: AuthenticationRequestParameters,
+            credentialIds: List<String>,
+            callingPackageName: String,
+            callingOrigin: String,
+        ) : this(
+            request = joseCompliantSerializer.encodeToString(request),
+            credentialIds = credentialIds,
+            callingPackageName = callingPackageName,
+            callingOrigin = callingOrigin
+        )
 
         override val protocol: ExchangeProtocolIdentifier
             get() = ExchangeProtocolIdentifier.OPENID4VP_V1_UNSIGNED
