@@ -31,6 +31,7 @@ import at.asitplus.signum.indispensable.SignatureAlgorithm
 import at.asitplus.signum.indispensable.cosef.toCoseAlgorithm
 import at.asitplus.signum.indispensable.josef.JsonWebKey
 import at.asitplus.signum.indispensable.josef.JsonWebKeySet
+import at.asitplus.signum.indispensable.josef.JwsCompact
 import at.asitplus.signum.indispensable.josef.io.joseCompliantSerializer
 import at.asitplus.signum.indispensable.josef.toJsonWebKey
 import at.asitplus.signum.indispensable.josef.toJwsAlgorithm
@@ -56,7 +57,6 @@ import at.asitplus.wallet.lib.oidc.RequestObjectJwsVerifier
 import at.asitplus.wallet.lib.oidvci.OAuth2Error
 import at.asitplus.wallet.lib.oidvci.OAuth2Exception
 import at.asitplus.wallet.lib.oidvci.OAuth2Exception.InvalidRequest
-import at.asitplus.wallet.lib.openid.OpenId4VpHolder.JsonWebKeyLookupInput
 import at.asitplus.wallet.lib.utils.DefaultMapStore
 import at.asitplus.wallet.lib.utils.MapStore
 import com.benasher44.uuid.uuid4
@@ -291,7 +291,7 @@ class OpenId4VpHolder(
             clientMetadata = params.parameters.clientMetadata,
             jsonWebKeys = params.parameters.clientMetadata?.loadJsonWebKeySet()?.keys
                 ?: lookupJsonWebKeysForClient(JsonWebKeyLookupInput(params.parameters.clientId))?.keys,
-            requestObjectVerified = (params as? RequestParametersFrom.JwsSigned)?.verified,
+            requestObjectVerified = (params as? RequestParametersFrom.Jws)?.verified,
             verifierInfo = params.parameters.verifierInfo
         )
     }
@@ -362,8 +362,9 @@ class OpenId4VpHolder(
     }
 
     private fun RequestParametersFrom<AuthenticationRequestParameters>.extractLeafCertKey(): JsonWebKey? =
-        (this as? RequestParametersFrom.JwsSigned<AuthenticationRequestParameters>)
-            ?.jwsSigned?.jwsHeader?.certificateChain?.firstOrNull()?.decodedPublicKey?.getOrNull()?.toJsonWebKey()
+        (this as? RequestParametersFrom.Jws<AuthenticationRequestParameters>)?.jws?.let {
+            (it as? JwsCompact)?.jwsHeader?.certificateChain?.firstOrNull()?.decodedPublicKey?.getOrNull()?.toJsonWebKey()
+        }
 
     suspend fun getMatchingCredentials(
         preparationState: AuthorizationResponsePreparationState,
@@ -406,11 +407,8 @@ class OpenId4VpHolder(
     private fun RequestParametersFrom<AuthenticationRequestParameters>.extractAudience(
         clientJsonWebKeySet: Collection<JsonWebKey>?,
     ) = when (this) {
-        is RequestParametersFrom.DcApiSigned<*> -> "origin:${dcApiRequest.callingOrigin}"
-        is RequestParametersFrom.DcApiUnsigned<*> -> "origin:${dcApiRequest.callingOrigin}"
-        is RequestParametersFrom.Json<*> -> parameters.extractAudience(clientJsonWebKeySet)
-        is RequestParametersFrom.JwsSigned<*> -> parameters.extractAudience(clientJsonWebKeySet)
-        is RequestParametersFrom.Uri<*> -> parameters.extractAudience(clientJsonWebKeySet)
+        is RequestParametersFrom.DcApiRequest -> "origin:${dcApiRequest.callingOrigin}"
+        else -> parameters.extractAudience(clientJsonWebKeySet)
     }
 
     @Throws(OAuth2Exception::class)
