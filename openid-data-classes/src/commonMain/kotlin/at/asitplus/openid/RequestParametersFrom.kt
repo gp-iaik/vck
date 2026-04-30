@@ -1,8 +1,9 @@
 package at.asitplus.openid
 
 import at.asitplus.dcapi.request.DCAPIWalletRequest
-import at.asitplus.signum.indispensable.josef.JwsCompact
+import at.asitplus.signum.indispensable.josef.JWS
 import at.asitplus.signum.indispensable.josef.JwsCompactStringSerializer
+import at.asitplus.signum.indispensable.josef.JwsGeneral
 import io.ktor.http.*
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -16,42 +17,68 @@ sealed class RequestParametersFrom<S : RequestParameters> {
      * Common ancestor for request parameters that are represented with a JWS signature
      * (e.g., classic OpenID requests or DC-API signed requests).
      */
-    @Serializable
     sealed class RequestParametersSigned<T : RequestParameters> : RequestParametersFrom<T>() {
-        abstract val jwsSigned: JwsCompact
+        abstract val jws: JWS
+        abstract val verified: Boolean
+    }
+
+    /**
+     * Common ancestor for request parameters that are [DCAPIWalletRequest.OpenId4Vp] subtypes
+     */
+    sealed interface DcApiRequest {
+        val dcApiRequest: DCAPIWalletRequest.OpenId4Vp
     }
 
     @Serializable
-    @SerialName(SerialNames.TYPE_JWS_SIGNED)
-    data class JwsSigned<T : RequestParameters>(
-        @Serializable(JwsCompactStringSerializer::class)
-        @SerialName(SerialNames.JWS_SIGNED)
-        override val jwsSigned: JwsCompact,
+    @SerialName(SerialNames.TYPE_JWS)
+    data class Jws<T : RequestParameters>(
+        @SerialName(SerialNames.JWS)
+        override val jws: JWS,
         @SerialName(SerialNames.PARAMETERS)
         override val parameters: T,
         @SerialName(SerialNames.VERIFIED)
-        val verified: Boolean,
+        override val verified: Boolean,
         @SerialName(SerialNames.PARENT)
-        val parent: Url?,
+        val parent: Url? = null,
     ) : RequestParametersSigned<T>() {
         override fun toString(): String {
-            return "JwsSigned(parent='$parent', jwsSigned=$jwsSigned, parameters=$parameters, verified=$verified)"
+            return "jws(parent='$parent', jws=$jws, parameters=$parameters, verified=$verified)"
         }
+    }
+
+    @Serializable
+    @SerialName(SerialNames.TYPE_DCAPI_MULTISIGNED)
+    data class DcApiMultiSigned<T : RequestParameters>(
+        @SerialName(SerialNames.DC_API_REQUEST)
+        override val dcApiRequest: DCAPIWalletRequest.OpenId4VpMultiSigned,
+        @SerialName(SerialNames.PARAMETERS)
+        override val parameters: T,
+        @SerialName(SerialNames.JWS)
+        override val jws: JwsGeneral,
+        @SerialName(SerialNames.VERIFIED)
+        override val verified: Boolean,
+    ) : RequestParametersSigned<T>(), DcApiRequest {
+        override fun toString(): String {
+            return "DcApiMultiSigned(dcApiRequest=$dcApiRequest, parameters=$parameters, jws=$jws)"
+        }
+
     }
 
     @Serializable
     @SerialName(SerialNames.TYPE_DCAPI_SIGNED)
     data class DcApiSigned<T : RequestParameters>(
         @SerialName(SerialNames.DC_API_REQUEST)
-        val dcApiRequest: DCAPIWalletRequest.OpenId4VpSigned,
+        override val dcApiRequest: DCAPIWalletRequest.OpenId4VpSigned,
         @SerialName(SerialNames.PARAMETERS)
         override val parameters: T,
         @Serializable(JwsCompactStringSerializer::class)
-        @SerialName(SerialNames.JWS_SIGNED)
-        override val jwsSigned: JwsCompact,
-    ) : RequestParametersSigned<T>() {
+        @SerialName(SerialNames.JWS)
+        override val jws: at.asitplus.signum.indispensable.josef.JwsCompact,
+        @SerialName(SerialNames.VERIFIED)
+        override val verified: Boolean,
+    ) : RequestParametersSigned<T>(), DcApiRequest {
         override fun toString(): String {
-            return "DcApiSigned(dcApiRequest=$dcApiRequest, parameters=$parameters, jwsSigned=$jwsSigned)"
+            return "DcApiSigned(dcApiRequest=$dcApiRequest, parameters=$parameters, jws=$jws)"
         }
     }
 
@@ -59,12 +86,12 @@ sealed class RequestParametersFrom<S : RequestParameters> {
     @SerialName(SerialNames.TYPE_DCAPI_UNSIGNED)
     data class DcApiUnsigned<T : RequestParameters>(
         @SerialName(SerialNames.DC_API_REQUEST)
-        val dcApiRequest: DCAPIWalletRequest.OpenId4VpUnsigned,
+        override val dcApiRequest: DCAPIWalletRequest.OpenId4VpUnsigned,
         @SerialName(SerialNames.PARAMETERS)
         override val parameters: T,
         @SerialName(SerialNames.JSON_STRING)
         val jsonString: String,
-    ) : RequestParametersFrom<T>() {
+    ) : DcApiRequest, RequestParametersFrom<T>() {
         override fun toString(): String {
             return "DcApiUnsigned(dcApiRequest=$dcApiRequest, parameters=$parameters, jsonString='$jsonString')"
         }
@@ -91,7 +118,7 @@ sealed class RequestParametersFrom<S : RequestParameters> {
         @SerialName(SerialNames.PARAMETERS)
         override val parameters: T,
         @SerialName(SerialNames.PARENT)
-        val parent: Url?,
+        val parent: Url? = null,
     ) : RequestParametersFrom<T>() {
         override fun toString(): String {
             return "Json(parent='$parent', jsonString='$jsonString', parameters=$parameters)"
@@ -99,13 +126,14 @@ sealed class RequestParametersFrom<S : RequestParameters> {
     }
 
     object SerialNames {
-        const val TYPE_JWS_SIGNED = "JwsSigned"
+        const val TYPE_JWS = "Jws"
         const val TYPE_JSON = "Json"
         const val TYPE_DCAPI_UNSIGNED = "DcApiUnsigned"
         const val TYPE_DCAPI_SIGNED = "DcApiSigned"
+        const val TYPE_DCAPI_MULTISIGNED = "DcApiMultiSigned"
         const val TYPE_URI = "Uri"
 
-        const val JWS_SIGNED = "jwsSigned"
+        const val JWS = "jws"
         const val JSON_STRING = "jsonString"
         const val URL = "url"
         const val PARENT = "parent"
@@ -115,5 +143,3 @@ sealed class RequestParametersFrom<S : RequestParameters> {
     }
 
 }
-
-
