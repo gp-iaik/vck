@@ -23,10 +23,21 @@ import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
 
 /**
- * In order to de-/serialize generic types we need a kind of factory approach
- * Because we deal with a sealed class we can use an intermediary surrogate,
- * keep the nested DC API request as a [JsonObject], determine the concrete
- * branch from the surrounding fields and then finalize the serialization.
+ * In order to de-/serialize generic types we need a kind of factory approach.
+ * Because we deal with a sealed class we use an intermediary surrogate,
+ * keeping the generic parameters and the fields identifying the concrete
+ * [RequestParametersFrom] subtype.
+ *
+ * During serialization, the subtype is flattened into that surrogate. During
+ * deserialization, the field combination determines the subtype again. The
+ * surrogate represents the nested DC API request as a [JsonObject] until the
+ * concrete [RequestParametersFrom] branch is known: [JwsGeneral] plus a DC API
+ * request becomes [RequestParametersFrom.DcApiMultiSigned], [JwsCompact] plus a
+ * DC API request becomes [RequestParametersFrom.DcApiSigned], and a JSON string
+ * plus a DC API request becomes [RequestParametersFrom.DcApiUnsigned]. Plain
+ * JSON, JWS, and URI requests are selected from their respective fields.
+ * Missing [RequestParametersFrom.RequestParametersSigned.verified] values
+ * default to `false`; [JwsFlattened] is recognized but not implemented.
  */
 class RequestParametersFromSerializer<T : RequestParameters>(
     parameterSerializer: KSerializer<T>,
