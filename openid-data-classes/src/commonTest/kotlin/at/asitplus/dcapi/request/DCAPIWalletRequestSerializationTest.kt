@@ -45,7 +45,7 @@ val DCAPIWalletRequestSerializationTest by testSuite {
 
     test("iso mdoc request round-trips") {
         val request = DCAPIWalletRequest.IsoMdoc(
-            isoMdocRequest = testIsoMdocRequest.request,
+            isoMdocRequest = testIsoMdocRequest.data,
             credentialIds = listOf("044c78be429198ffc2a66d935ff86e4e2bdb8ca2ab0cd1bacc85f3a73d8347b4"),
             callingOrigin = "https://wallet.a-sit.at"
         )

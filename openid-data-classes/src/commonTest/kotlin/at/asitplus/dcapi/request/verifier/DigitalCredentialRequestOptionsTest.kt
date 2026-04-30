@@ -28,7 +28,7 @@ val DigitalCredentialRequestOptionsTest by testSuite {
         val request = decoded.requests.first()
             .shouldBeInstanceOf<DigitalCredentialGetRequest.OpenId4VpSigned>()
 
-        val jarRequest = request.request.shouldBeInstanceOf<JarRequestParameters>()
+        val jarRequest = request.data.shouldBeInstanceOf<JarRequestParameters>()
         jarRequest.request shouldBe requestJwt
     }
 }

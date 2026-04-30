@@ -10,13 +10,13 @@ import kotlinx.serialization.json.JsonClassDiscriminator
 @Serializable
 @JsonClassDiscriminator("protocol")
 sealed class DigitalCredentialGetRequest {
-    abstract val protocol : ExchangeProtocolIdentifier
+    abstract val protocol: ExchangeProtocolIdentifier
 
     @Serializable
     @SerialName("org-iso-mdoc")
     data class IsoMdoc(
         @SerialName("data")
-        val request: IsoMdocRequest,
+        val data: IsoMdocRequest,
     ) : DigitalCredentialGetRequest() {
         override val protocol: ExchangeProtocolIdentifier
             get() = ExchangeProtocolIdentifier.ISO_MDOC_ANNEX_C
