@@ -10,8 +10,11 @@ import at.asitplus.openid.OpenIdConstants
 import at.asitplus.openid.RequestObjectParameters
 import at.asitplus.openid.RequestParameters
 import at.asitplus.openid.RequestParametersFrom
-import at.asitplus.signum.indispensable.josef.JwsCompactTyped
 import at.asitplus.signum.indispensable.josef.io.joseCompliantSerializer
+import at.asitplus.signum.indispensable.josef.JwsCompact
+import at.asitplus.signum.indispensable.josef.JwsCompactTyped
+import at.asitplus.signum.indispensable.josef.JwsGeneral
+import at.asitplus.signum.indispensable.josef.typed
 import at.asitplus.wallet.lib.RemoteResourceRetrieverFunction
 import at.asitplus.wallet.lib.RemoteResourceRetrieverInput
 import at.asitplus.wallet.lib.data.MediaTypes
@@ -59,8 +62,8 @@ class RequestParser(
      */
     suspend fun parseRequestParameters(
         input: DCAPIWalletRequest.OpenId4Vp,
-    ): KmmResult<RequestParametersFrom<*>> = catching {
-        input.parseAsDcApiRequest()?.extractRequest() ?: throw InvalidRequest("parse error: $input")
+    ): KmmResult<RequestParametersFrom<AuthenticationRequestParameters>> = catching {
+        input.parseAsDcApiRequest() ?: throw InvalidRequest("parse error: $input")
     }
 
     private suspend fun String.parseParameters(): RequestParametersFrom<out RequestParameters> =
@@ -91,21 +94,33 @@ class RequestParser(
         RequestParametersFrom.Json(this, params, (parent as? RequestParametersFrom.Uri)?.url)
     }.getOrNull()
 
-    private fun DCAPIWalletRequest.OpenId4Vp.parseAsDcApiRequest(): RequestParametersFrom<*>? = catchingUnwrapped {
-        when (this) {
-            is DCAPIWalletRequest.OpenId4VpSigned -> {
-                val requestStr = (this.request as? JarRequestParameters)?.request
-                    ?: throw InvalidRequest("Did not find jar request parameters: $this")
-                val jwsSigned = JwsCompactTyped<RequestParameters>(requestStr)
-                RequestParametersFrom.DcApiSigned(this, jwsSigned.payload, jwsSigned.jws)
-            }
+    private fun DCAPIWalletRequest.OpenId4Vp.parseAsDcApiRequest(): RequestParametersFrom<AuthenticationRequestParameters>? =
+        catchingUnwrapped {
+            when (this) {
+                is DCAPIWalletRequest.OpenId4VpSigned ->
+                    JwsCompact.parse<AuthenticationRequestParameters>(request).getOrThrow().let { (jwt, param) ->
+                        RequestParametersFrom.DcApiSigned(this, param, jwt, false)
+                    }
 
-            is DCAPIWalletRequest.OpenId4VpUnsigned -> {
-                val jsonString = joseCompliantSerializer.encodeToString(this.request)
-                RequestParametersFrom.DcApiUnsigned(this, this.request, jsonString)
+                is DCAPIWalletRequest.OpenId4VpUnsigned ->
+                    RequestParametersFrom.DcApiUnsigned(
+                        this,
+                        joseCompliantSerializer.decodeFromString<AuthenticationRequestParameters>(request),
+                        request
+                    )
+
+                is DCAPIWalletRequest.OpenId4VpMultiSigned ->
+                    joseCompliantSerializer.decodeFromString<JwsGeneral>(request)
+                        .typed<AuthenticationRequestParameters, JwsGeneral>().let { (jws, payload) ->
+                            RequestParametersFrom.DcApiMultiSigned(
+                                this,
+                                payload,
+                                jws,
+                                false
+                            )
+                        }
             }
-        }
-    }.getOrNull()
+        }.getOrNull()
 
     suspend fun extractRequest(
         parameters: JarRequestParameters,
@@ -135,8 +150,8 @@ class RequestParser(
     ): RequestParametersFrom<*>? =
         catching { JwsCompactTyped<RequestParameters>(this) }
             .getOrNull()?.let { jws ->
-                RequestParametersFrom.JwsSigned(
-                    jwsSigned = jws.jws,
+                RequestParametersFrom.Jws(
+                    jws = jws.jws,
                     parameters = jws.payload,
                     verified = requestObjectJwsVerifier.invoke(jws),
                     parent = (parent as? RequestParametersFrom.Uri)?.url
