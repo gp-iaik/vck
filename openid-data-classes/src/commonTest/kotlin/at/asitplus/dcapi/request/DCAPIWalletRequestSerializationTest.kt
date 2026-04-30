@@ -3,7 +3,10 @@ package at.asitplus.dcapi.request
 import at.asitplus.dcapi.request.verifier.testIsoMdocRequest
 import at.asitplus.dcapi.request.verifier.testSignedOpenId4VpRequest
 import at.asitplus.dcapi.request.verifier.testUnsignedOpenId4VpRequest
+import at.asitplus.openid.AuthenticationRequestParameters
+import at.asitplus.signum.indispensable.josef.JwsCompactTyped
 import at.asitplus.signum.indispensable.josef.io.joseCompliantSerializer
+import at.asitplus.signum.indispensable.josef.typed
 import de.infix.testBalloon.framework.core.testSuite
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -12,7 +15,7 @@ import io.kotest.matchers.string.shouldNotContain
 val DCAPIWalletRequestSerializationTest by testSuite {
     test("openid4vp unsigned request round-trips") {
         val request = DCAPIWalletRequest.OpenId4VpUnsigned(
-            request = testUnsignedOpenId4VpRequest.request,
+            request = testUnsignedOpenId4VpRequest.data,
             credentialIds = listOf("044c78be429198ffc2a66d935ff86e4e2bdb8ca2ab0cd1bacc85f3a73d8347b4"),
             callingPackageName = "com.android.chrome",
             callingOrigin = "https://wallet.a-sit.at"
@@ -27,7 +30,7 @@ val DCAPIWalletRequestSerializationTest by testSuite {
     }
 
     test("openid4vp signed request round-trips") {
-        val request = testSignedOpenId4VpRequest.request
+        val request: JwsCompactTyped<AuthenticationRequestParameters> = testSignedOpenId4VpRequest.data.request.typed()
         val walletRequest = DCAPIWalletRequest.OpenId4VpSigned(
             request = request,
             credentialIds = listOf("044c78be429198ffc2a66d935ff86e4e2bdb8ca2ab0cd1bacc85f3a73d8347b4"),

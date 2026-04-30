@@ -1,6 +1,5 @@
 package at.asitplus.dcapi.request.verifier
 
-import at.asitplus.openid.JarRequestParameters
 import at.asitplus.signum.indispensable.josef.io.joseCompliantSerializer
 import de.infix.testBalloon.framework.core.testSuite
 import io.kotest.matchers.nulls.shouldNotBeNull
@@ -27,8 +26,6 @@ val DigitalCredentialRequestOptionsTest by testSuite {
         decoded.requests.size shouldBe 2
         val request = decoded.requests.first()
             .shouldBeInstanceOf<DigitalCredentialGetRequest.OpenId4VpSigned>()
-
-        val jarRequest = request.data.shouldBeInstanceOf<JarRequestParameters>()
-        jarRequest.request shouldBe requestJwt
+        request.data.request.toString() shouldBe requestJwt
     }
 }
