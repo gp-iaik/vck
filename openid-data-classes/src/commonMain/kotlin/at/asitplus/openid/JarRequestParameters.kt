@@ -9,15 +9,10 @@ data class JarRequestParameters(
     /**
      * OIDC: REQUIRED. OAuth 2.0 Client Identifier valid at the Authorization Server.
      *
-     * DC API: The client_id parameter MUST be omitted in unsigned requests defined in Appendix
-     * A.3.1. The Wallet MUST ignore any client_id parameter that is present in an unsigned request.
-     * The client_id parameter MUST be present in signed requests defined in Appendix A.3.2,
-     * as it communicates to the wallet which Client Identifier Prefix and Client Identifier to use
-     * when authenticating the client through verification of the request signature or retrieving
-     * client metadata.
+     * Note that [clientId] is distinct from [AuthenticationRequestParameters.clientId]
      */
     @SerialName("client_id")
-    val clientId: String? = null,
+    val clientId: String,
 
     /**
      * OAuth 2.0 JAR: REQUIRED unless `request_uri` is specified. The Request Object that holds authorization request
