@@ -37,6 +37,7 @@ val DCAPIWalletRequestSerializationTest by testSuite {
             callingPackageName = "com.android.chrome",
             callingOrigin = "https://wallet.a-sit.at"
         )
+        walletRequest.request.shouldNotContain("\"")
 
         val encoded = joseCompliantSerializer.encodeToString<DCAPIWalletRequest>(walletRequest)
         encoded.shouldContain("\"credentialIds\"")
