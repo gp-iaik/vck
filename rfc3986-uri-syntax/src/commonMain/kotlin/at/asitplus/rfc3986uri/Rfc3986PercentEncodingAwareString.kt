@@ -24,7 +24,7 @@ data class Rfc3986PercentEncodingAwareString(
         val merged = parts.subList(1, parts.size).fold(listOf(parts.first()) to ByteArray(0)) { acc, part ->
             val encodedUppercase = part.substring(0, 2).toInt(16).toByte()
             val consecutiveOctets = acc.second + encodedUppercase
-            if(part.length > 2) {
+            if (part.length > 2) {
                 // this is the end of a consecutive octet sequence
                 (acc.first + consecutiveOctets.decodeToString() + part.substring(2)) to ByteArray(0)
             } else {
@@ -59,9 +59,7 @@ data class Rfc3986PercentEncodingAwareString(
 
         other as Rfc3986PercentEncodingAwareString
 
-        return string.percentEncodedUppercaseListRepresentation().joinToString("%").compareTo(
-            other.string.percentEncodedUppercaseListRepresentation().joinToString("%")
-        ) == 0
+        return string.percentEncodedUppercaseListRepresentation() == other.string.percentEncodedUppercaseListRepresentation()
     }
 
     override fun hashCode() = string.percentEncodedUppercaseListRepresentation().hashCode()
@@ -91,11 +89,11 @@ data class Rfc3986PercentEncodingAwareString(
         } else {
             val encodedUppercase = string.substring(0, 2).uppercase()
             val encodedChar = Char(encodedUppercase.toInt(16))
-            if(Rfc3986Grammar.isUnreserved(encodedChar)) {
+            if (Rfc3986Grammar.isUnreserved(encodedChar)) {
                 encodedChar.toString()
             } else {
-                encodedUppercase
+                "%$encodedUppercase"
             } + string.substring(2)
         }
-    }
+    }.joinToString("")
 }

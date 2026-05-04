@@ -8,6 +8,30 @@ import io.ktor.http.Url
 
 @Suppress("unused")
 val Rfc3986PercentEncodingAwareStringTest by testSuite {
+    testSuite("percent decoding equality") {
+        withData(
+            mapOf( // upper/lowercase
+                "aaaaaaaaAAAAAAAA" to "aaaAAaAAaaaAAaAA"
+            ).mapValues {
+                it.key.chunked(2).joinToString("") {
+                    "%$it"
+                } to it.value.chunked(2).joinToString("") {
+                    "%$it"
+                }
+            } + mapOf( // unreserved characters
+                "~" to "%7E",
+                "-" to "%2D",
+                "." to "%2E",
+                "_" to "%5F",
+            ).mapValues {
+                it.key to it.value
+            } + ('0'..'9').plus('a'..'z').plus('A'..'Z').associate {
+                it.toString() to (it.toString() to "%${it.code.toString(16)}")
+            }
+        ) {
+            Rfc3986UriQuery(it.first) shouldBe Rfc3986UriQuery(it.second)
+        }
+    }
     testSuite("case insensitivity") {
         withData(
             mapOf(
