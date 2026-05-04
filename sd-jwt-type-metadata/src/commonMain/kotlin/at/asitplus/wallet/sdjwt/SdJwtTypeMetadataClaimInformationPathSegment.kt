@@ -1,0 +1,3 @@
+package at.asitplus.wallet.sdjwt
+
+sealed interface SdJwtTypeMetadataClaimInformationPathSegment
