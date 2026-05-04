@@ -18,9 +18,9 @@ import kotlin.jvm.JvmInline
  * This metadata MUST be encoded in the same format as the hash-source (without the single quotes) in section 4.2 of the Content Security Policy Level 2 specification.
  * https://www.w3.org/TR/2016/REC-SRI-20160623/#integrity-metadata
  */
-@Serializable(with = SdJwtTypeMetadataIntegrityHash.InlineSerializer::class)
+@Serializable(with = W3cSubresourceIntegrityMetadata.InlineSerializer::class)
 @JvmInline
-value class SdJwtTypeMetadataIntegrityHash(
+value class W3cSubresourceIntegrityMetadata(
     val expression: ContentSecurityPolicySourceExpressionHash
 ) {
     constructor(string: String): this(
@@ -35,7 +35,7 @@ value class SdJwtTypeMetadataIntegrityHash(
 
     override fun toString() = expression.toString().removePrefix("'").removeSuffix("'")
 
-    class InlineSerializer : KSerializer<SdJwtTypeMetadataIntegrityHash> {
+    class InlineSerializer : KSerializer<W3cSubresourceIntegrityMetadata> {
         override val descriptor: SerialDescriptor
             get() = PrimitiveSerialDescriptor(
                 serialName = InlineSerializer::class.qualifiedName!!,
@@ -44,12 +44,12 @@ value class SdJwtTypeMetadataIntegrityHash(
 
         override fun serialize(
             encoder: Encoder,
-            value: SdJwtTypeMetadataIntegrityHash
+            value: W3cSubresourceIntegrityMetadata
         ) {
             encoder.encodeString(value.toString())
         }
 
-        override fun deserialize(decoder: Decoder) = SdJwtTypeMetadataIntegrityHash(
+        override fun deserialize(decoder: Decoder) = W3cSubresourceIntegrityMetadata(
             decoder.decodeString()
         )
     }

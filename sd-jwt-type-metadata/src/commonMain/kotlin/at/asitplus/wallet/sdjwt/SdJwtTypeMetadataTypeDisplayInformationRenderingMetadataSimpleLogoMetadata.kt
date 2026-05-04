@@ -1,6 +1,6 @@
 package at.asitplus.wallet.sdjwt
 
-import at.asitplus.rfc.Rfc3986UniformResourceIdentifier
+import at.asitplus.rfc3986uri.Rfc3986UniformResourceIdentifier
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -9,7 +9,7 @@ data class SdJwtTypeMetadataTypeDisplayInformationRenderingMetadataSimpleLogoMet
     @SerialName(SerialNames.URI)
     val uri: Rfc3986UniformResourceIdentifier,
     @SerialName(SerialNames.URI_INTEGRITY)
-    val uriIntegrity: SdJwtTypeMetadataIntegrityHash? = null,
+    val uriIntegrity: W3cSubresourceIntegrityMetadata? = null,
     @SerialName(SerialNames.ALTERNATIVE_TEXT)
     val alternativeText: String? = null,
 ) {

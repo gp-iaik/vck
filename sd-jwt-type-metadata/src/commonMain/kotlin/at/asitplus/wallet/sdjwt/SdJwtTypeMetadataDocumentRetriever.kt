@@ -1,10 +1,13 @@
 package at.asitplus.wallet.sdjwt
 
 fun interface SdJwtTypeMetadataDocumentRetriever {
-    /**
-     * This resolver performs integrity checks and merges the inheritance tree
-     */
     suspend fun retrieve(
         sdJwtVcType: SdJwtVcType,
-    ): SdJwtTypeMetadataDocument
+        /**
+         * A Consumer MAY cache Type Metadata for a SD-JWT VC type. If a hash for integrity protection is present in the
+         * Type Metadata as defined in Section 5, the Consumer MAY assume that the Type Metadata is static and can be
+         * cached indefinitely. Otherwise
+         */
+        isStatic: Boolean,
+    ): SdJwtTypeMetadataDocument?
 }

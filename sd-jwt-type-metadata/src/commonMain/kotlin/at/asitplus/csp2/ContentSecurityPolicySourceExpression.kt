@@ -1,6 +1,6 @@
 package at.asitplus.csp2
 
-import at.asitplus.rfc.Rfc3986UriSchemeName
+import at.asitplus.rfc3986uri.Rfc3986UriSchemeName
 
 sealed interface ContentSecurityPolicySourceExpression {
     companion object {

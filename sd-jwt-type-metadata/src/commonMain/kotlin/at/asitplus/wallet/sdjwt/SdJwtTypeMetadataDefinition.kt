@@ -24,7 +24,7 @@ data class SdJwtTypeMetadataDefinition(
     @SerialName(SerialNames.EXTENDS)
     val extends: SdJwtVcType? = null,
     @SerialName(SerialNames.EXTENDS_INTEGRITY)
-    val extendsIntegrity: SdJwtTypeMetadataIntegrityHash? = null,
+    val extendsIntegrity: W3cSubresourceIntegrityMetadata? = null,
     @SerialName(SerialNames.DISPLAY)
     val display: List<SdJwtTypeMetadataTypeDisplayInformation>? = null,
     @SerialName(SerialNames.CLAIMS)

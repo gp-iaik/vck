@@ -12,4 +12,6 @@ import kotlin.jvm.JvmInline
 @JvmInline
 value class SdJwtVcType(
     val string: String
-)
+) {
+    override fun toString() = string
+}

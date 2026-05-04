@@ -6,6 +6,6 @@ fun interface SdJwtTypeMetadataDocumentResolver {
      */
     suspend fun resolve(
         sdJwtVcType: SdJwtVcType,
-        integrityHash: SdJwtTypeMetadataIntegrityHash?,
+        integrityHash: W3cSubresourceIntegrityMetadata?,
     ): SdJwtTypeMetadata
 }

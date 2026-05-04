@@ -31,6 +31,7 @@ kotlin {
             dependencies {
                 implementation(project.napier())
                 implementation(project.ktor("http"))
+                implementation(ktor("client-core"))
                 api(project(":rfc3986-uri-syntax"))
                 api("com.benasher44:uuid:${VcLibVersions.uuid}")
                 api("at.asitplus.signum:supreme:${VcLibVersions.signum}")

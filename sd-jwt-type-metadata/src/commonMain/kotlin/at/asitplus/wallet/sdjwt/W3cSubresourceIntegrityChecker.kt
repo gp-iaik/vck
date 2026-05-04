@@ -1,11 +1,9 @@
 package at.asitplus.wallet.sdjwt
 
-fun interface SdJwtTypeMetadataDocumentIntegrityChecker {
+fun interface W3cSubresourceIntegrityChecker {
     @Throws
     suspend fun checkIntegrity(
-        document: SdJwtTypeMetadataDocument,
+        data: ByteArray,
         integrityHash: W3cSubresourceIntegrityMetadata,
     )
 }
-
-

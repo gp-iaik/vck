@@ -6,7 +6,7 @@ data class DelegatingSdJwtTypeMetadataDocumentResolver(
 ): SdJwtTypeMetadataDocumentResolver {
     override suspend fun resolve(
         sdJwtVcType: SdJwtVcType,
-        integrityHash: SdJwtTypeMetadataIntegrityHash?,
+        integrityHash: W3cSubresourceIntegrityMetadata?,
     ): SdJwtTypeMetadata {
         val visited = mutableListOf<SdJwtVcType>()
         val ancestry = mutableListOf<SdJwtTypeMetadataDocument>()
@@ -16,7 +16,12 @@ data class DelegatingSdJwtTypeMetadataDocumentResolver(
             check(nextSdJwtVcType !in visited) {
                 "Expected inheritance to be non-cyclic, but was cyclic after ${visited.size} nodes, extending $nextSdJwtVcType from ${visited.last()} in $visited."
             }
-            val document = documentRetriever.retrieve(nextSdJwtVcType)
+            val document = documentRetriever.retrieve(
+                nextSdJwtVcType,
+                isStatic = nextIntegrityHash != null
+            ) ?: throw IllegalStateException(
+                "Failed to resolve sd jwt type document for: $sdJwtVcType"
+            )
             nextIntegrityHash?.let {
                 require(document.definition.vct == ancestry.last().definition.extends) {
                     """Expected the extending type to specify the vct of the extended type in `extends`, but got `${ancestry.last().definition.extends}` instead of `${document.definition.vct}`."""

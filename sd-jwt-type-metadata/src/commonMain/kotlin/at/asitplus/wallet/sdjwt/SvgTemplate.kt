@@ -1,6 +1,6 @@
 package at.asitplus.wallet.sdjwt
 
-import at.asitplus.rfc.Rfc3986UniformResourceIdentifier
+import at.asitplus.rfc3986uri.Rfc3986UniformResourceIdentifier
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -15,7 +15,7 @@ data class SvgTemplate(
      *  uri#integrity: An "integrity metadata" string as described in Section 5. This property is OPTIONAL.
      */
     @SerialName(SerialNames.URI_INTEGRITY)
-    val uriIntegrity: SdJwtTypeMetadataIntegrityHash? = null,
+    val uriIntegrity: W3cSubresourceIntegrityMetadata? = null,
     /**
      * properties: An object containing properties for the SVG template, as described in Section 4.5.1.2.1. This
      * property is REQUIRED if more than one SVG template is present, otherwise it is OPTIONAL.
