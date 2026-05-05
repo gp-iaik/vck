@@ -34,7 +34,7 @@ kotlin {
                 implementation(ktor("client-core"))
                 api(project(":rfc3986-uri-syntax"))
                 api("com.benasher44:uuid:${VcLibVersions.uuid}")
-                api("at.asitplus.signum:supreme:${VcLibVersions.signum}")
+                api("at.asitplus.signum:supreme:${VcLibVersions.supreme}")
                 api("at.asitplus.signum:indispensable-cosef:${VcLibVersions.signum}")
                 api("at.asitplus.signum:indispensable-josef:${VcLibVersions.signum}")
                 api("at.asitplus:jsonpath4k:${VcLibVersions.jsonpath}")
