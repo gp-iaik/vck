@@ -2,7 +2,7 @@ package at.asitplus.wallet.sdjwt
 
 data class DelegatingSdJwtTypeMetadataDocumentResolver(
     val documentRetriever: SdJwtTypeMetadataDocumentRetriever,
-    val integrityChecker: SdJwtTypeMetadataDocumentIntegrityChecker,
+    val integrityChecker: SdJwtTypeMetadataDocumentIntegrityChecker = SdJwtTypeMetadataDocumentIntegrityChecker.DEFAULT,
 ): SdJwtTypeMetadataDocumentResolver {
     override suspend fun resolve(
         sdJwtVcType: SdJwtVcType,

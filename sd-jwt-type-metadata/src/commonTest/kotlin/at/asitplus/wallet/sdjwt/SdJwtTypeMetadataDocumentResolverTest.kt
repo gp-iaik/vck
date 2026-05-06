@@ -76,7 +76,6 @@ val SdJwtTypeMetadataDocumentResolverTest by testSuite {
 
         val documentResolver = DelegatingSdJwtTypeMetadataDocumentResolver(
             documentRetriever = typeMetadataDocumentRetriever,
-            integrityChecker = SignumSdJwtTypeMetadataDocumentIntegrityChecker,
         )
         documentResolver.resolve(
             SdJwtVcType("https://example.com/custom-type-metadata"),
