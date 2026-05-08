@@ -22,7 +22,7 @@ data class IsoMdocResponse(
     override val origin: String? = null,
 ) : DigitalCredentialInterface() {
     override val protocol: ExchangeProtocolIdentifier
-        get() = ExchangeProtocolIdentifier.ISO_MDOC_ANNEX_C
+        get() = ExchangeProtocolIdentifier.IsoMdocAnnexC
 }
 
 
@@ -43,7 +43,7 @@ data class OpenId4VpResponseSigned(
     override val origin: String? = null,
 ) : DigitalCredentialInterface(), OpenId4VpResponse {
     override val protocol: ExchangeProtocolIdentifier
-        get() = ExchangeProtocolIdentifier.OPENID4VP_V1_SIGNED
+        get() = ExchangeProtocolIdentifier.OpenId4VpV1Signed
 }
 
 @Serializable
@@ -55,5 +55,5 @@ data class OpenId4VpResponseUnsigned(
     override val origin: String? = null,
 ) : DigitalCredentialInterface(), OpenId4VpResponse {
     override val protocol: ExchangeProtocolIdentifier
-        get() = ExchangeProtocolIdentifier.OPENID4VP_V1_UNSIGNED
+        get() = ExchangeProtocolIdentifier.OpenId4VpV1Unsigned
 }

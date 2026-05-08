@@ -36,7 +36,7 @@ value class ExchangeProtocolIdentifier(
         }
         openId4VpRequestType?.let {
             require(it == PART_UNSIGNED || it == PART_SIGNED || it == PART_MULTISIGNED) {
-                "Request type must be one of: unsigned, signed"
+                "Request type must be one of: unsigned, signed or multisigned"
             }
         }
     }
@@ -65,18 +65,24 @@ value class ExchangeProtocolIdentifier(
         /** `unsigned` */
         private const val PART_UNSIGNED = "unsigned"
 
-        private const val ORG_ISO_MDOC = "org-iso-mdoc"
+        const val ORG_ISO_MDOC = "org-iso-mdoc"
 
         /** `openid4vp-v1-unsigned` */
-        val OPENID4VP_V1_UNSIGNED = ExchangeProtocolIdentifier("$PART_OPENID4VP$DELIMITER$PART_V1$DELIMITER$PART_UNSIGNED")
+        const val OPENID4VP_V1_UNSIGNED = "$PART_OPENID4VP$DELIMITER$PART_V1$DELIMITER$PART_UNSIGNED"
 
         /** `openid4vp-v1-signed` */
-        val OPENID4VP_V1_SIGNED = ExchangeProtocolIdentifier("$PART_OPENID4VP$DELIMITER$PART_V1$DELIMITER$PART_SIGNED")
+        const val OPENID4VP_V1_SIGNED = "$PART_OPENID4VP$DELIMITER$PART_V1$DELIMITER$PART_SIGNED"
 
         /** `openid4vp-v1-multisigned` */
-        val OPENID4VP_V1_MULTISIGNED = ExchangeProtocolIdentifier("$PART_OPENID4VP$DELIMITER$PART_V1$DELIMITER$PART_MULTISIGNED")
+        const val OPENID4VP_V1_MULTISIGNED = "$PART_OPENID4VP$DELIMITER$PART_V1$DELIMITER$PART_MULTISIGNED"
+
+        val OpenId4VpV1Unsigned = ExchangeProtocolIdentifier(OPENID4VP_V1_UNSIGNED)
+
+        val OpenId4VpV1Signed = ExchangeProtocolIdentifier(OPENID4VP_V1_SIGNED)
+
+        val OpenId4VpV1Multisigned = ExchangeProtocolIdentifier(OPENID4VP_V1_MULTISIGNED)
 
         /** `org-iso-mdoc` */
-        val ISO_MDOC_ANNEX_C = ExchangeProtocolIdentifier(ORG_ISO_MDOC)
+        val IsoMdocAnnexC = ExchangeProtocolIdentifier(ORG_ISO_MDOC)
     }
 }

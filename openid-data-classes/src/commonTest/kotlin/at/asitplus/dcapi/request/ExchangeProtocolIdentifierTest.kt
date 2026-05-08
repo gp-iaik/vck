@@ -7,7 +7,7 @@ import io.kotest.matchers.shouldBe
 val ExchangeProtocolIdentifierTest by testSuite {
 
     test("openid4vp v1 signed parses") {
-        val identifier = ExchangeProtocolIdentifier.OPENID4VP_V1_SIGNED
+        val identifier = ExchangeProtocolIdentifier.OpenId4VpV1Signed
 
         identifier.openIdVersion shouldBe "v1"
         identifier.openId4VpRequestType shouldBe "signed"
@@ -17,7 +17,7 @@ val ExchangeProtocolIdentifierTest by testSuite {
     }
 
     test("openid4vp v1 unsigned parses") {
-        val identifier = ExchangeProtocolIdentifier.OPENID4VP_V1_UNSIGNED
+        val identifier = ExchangeProtocolIdentifier.OpenId4VpV1Unsigned
 
         identifier.openIdVersion shouldBe "v1"
         identifier.openId4VpRequestType shouldBe "unsigned"
@@ -36,7 +36,7 @@ val ExchangeProtocolIdentifierTest by testSuite {
     }
 
     test("iso mdoc protocol is accepted") {
-        val identifier = ExchangeProtocolIdentifier.ISO_MDOC_ANNEX_C
+        val identifier = ExchangeProtocolIdentifier.IsoMdocAnnexC
 
         identifier.isIsoMdocRequest shouldBe true
         identifier.openIdVersion shouldBe null

@@ -37,7 +37,7 @@ sealed interface DCAPIWalletRequest {
     ) : DCAPIWalletRequest {
 
         override val protocol: ExchangeProtocolIdentifier
-            get() = ExchangeProtocolIdentifier.ISO_MDOC_ANNEX_C
+            get() = ExchangeProtocolIdentifier.IsoMdocAnnexC
     }
 
     sealed class OpenId4Vp : DCAPIWalletRequest {
@@ -71,7 +71,7 @@ sealed interface DCAPIWalletRequest {
         )
 
         override val protocol: ExchangeProtocolIdentifier
-            get() = ExchangeProtocolIdentifier.OPENID4VP_V1_MULTISIGNED
+            get() = ExchangeProtocolIdentifier.OpenId4VpV1Multisigned
     }
 
     @ConsistentCopyVisibility
@@ -100,7 +100,7 @@ sealed interface DCAPIWalletRequest {
         )
 
         override val protocol: ExchangeProtocolIdentifier
-            get() = ExchangeProtocolIdentifier.OPENID4VP_V1_SIGNED
+            get() = ExchangeProtocolIdentifier.OpenId4VpV1Signed
     }
 
 
@@ -130,7 +130,7 @@ sealed interface DCAPIWalletRequest {
         )
 
         override val protocol: ExchangeProtocolIdentifier
-            get() = ExchangeProtocolIdentifier.OPENID4VP_V1_UNSIGNED
+            get() = ExchangeProtocolIdentifier.OpenId4VpV1Unsigned
 
     }
 

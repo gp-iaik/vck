@@ -11,63 +11,75 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonClassDiscriminator
 
 @Serializable
-@JsonClassDiscriminator("protocol")
+@JsonClassDiscriminator(DigitalCredentialGetRequest.SerialNames.PROTOCOL)
 sealed class DigitalCredentialGetRequest {
     abstract val protocol: ExchangeProtocolIdentifier
 
+    @SerialName(SerialNames.DATA)
+    abstract val data: Any
+
     @Serializable
-    @SerialName("org-iso-mdoc")
+    @SerialName(SerialNames.ORG_ISO_MDOC)
     data class IsoMdoc(
-        @SerialName("data")
-        val data: IsoMdocRequest,
+        @SerialName(SerialNames.DATA)
+        override val data: IsoMdocRequest,
     ) : DigitalCredentialGetRequest() {
         override val protocol: ExchangeProtocolIdentifier
-            get() = ExchangeProtocolIdentifier.ISO_MDOC_ANNEX_C
+            get() = ExchangeProtocolIdentifier.IsoMdocAnnexC
     }
 
     sealed interface OpenId4Vp {
         @Serializable
         data class SignedDataElement(
-            @SerialName("request")
+            @SerialName(SerialNames.REQUEST)
             @Serializable(with = JwsCompactStringSerializer::class)
             val request: JwsCompact
         )
 
         @Serializable
         data class MultiSignedDataElement(
-            @SerialName("request")
+            @SerialName(SerialNames.REQUEST)
             val request: JwsGeneral
         )
     }
 
     @Serializable
-    @SerialName("openid4vp-v1-signed")
+    @SerialName(SerialNames.OPENID4VP_V1_SIGNED)
     data class OpenId4VpSigned(
-        @SerialName("data")
-        val data: OpenId4Vp.SignedDataElement,
+        @SerialName(SerialNames.DATA)
+        override val data: OpenId4Vp.SignedDataElement,
     ) : DigitalCredentialGetRequest(), OpenId4Vp {
         override val protocol: ExchangeProtocolIdentifier
-            get() = ExchangeProtocolIdentifier.OPENID4VP_V1_SIGNED
+            get() = ExchangeProtocolIdentifier.OpenId4VpV1Signed
     }
 
     @Serializable
-    @SerialName("openid4vp-v1-multisigned")
+    @SerialName(SerialNames.OPENID4VP_V1_MULTISIGNED)
     data class OpenId4VpMultiSigned(
-        @SerialName("data")
-        val data: OpenId4Vp.MultiSignedDataElement,
+        @SerialName(SerialNames.DATA)
+        override val data: OpenId4Vp.MultiSignedDataElement,
     ) : DigitalCredentialGetRequest(), OpenId4Vp {
         override val protocol: ExchangeProtocolIdentifier
-            get() = ExchangeProtocolIdentifier.OPENID4VP_V1_SIGNED
+            get() = ExchangeProtocolIdentifier.OpenId4VpV1Signed
     }
 
     @Serializable
-    @SerialName("openid4vp-v1-unsigned")
+    @SerialName(SerialNames.OPENID4VP_V1_UNSIGNED)
     data class OpenId4VpUnsigned(
-        @SerialName("data")
-        val data: AuthenticationRequestParameters,
+        @SerialName(SerialNames.DATA)
+        override val data: AuthenticationRequestParameters,
     ) : DigitalCredentialGetRequest(), OpenId4Vp {
         override val protocol: ExchangeProtocolIdentifier
-            get() = ExchangeProtocolIdentifier.OPENID4VP_V1_UNSIGNED
+            get() = ExchangeProtocolIdentifier.OpenId4VpV1Unsigned
     }
 
+    object SerialNames {
+        const val DATA = "data"
+        const val REQUEST = "request"
+        const val PROTOCOL = "protocol"
+        const val ORG_ISO_MDOC = ExchangeProtocolIdentifier.ORG_ISO_MDOC
+        const val OPENID4VP_V1_UNSIGNED = ExchangeProtocolIdentifier.OPENID4VP_V1_UNSIGNED
+        const val OPENID4VP_V1_SIGNED = ExchangeProtocolIdentifier.OPENID4VP_V1_SIGNED
+        const val OPENID4VP_V1_MULTISIGNED = ExchangeProtocolIdentifier.OPENID4VP_V1_MULTISIGNED
+    }
 }
