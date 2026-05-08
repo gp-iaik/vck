@@ -143,7 +143,7 @@ val OpenIdRequestParserTests by testSuite {
 
 
         "signed request by value" { requestParser ->
-            val input = "https://example.com?request=$jws"
+            val input = "https://example.com?request=$jws&client_id=s6BhdRkqt3"
 
             requestParser.parseRequestParameters(input).getOrThrow().apply {
                 shouldBeInstanceOf<RequestParametersFrom<AuthenticationRequestParameters>>()
@@ -208,7 +208,7 @@ val OpenIdRequestParserTests by testSuite {
     } - {
 
         "plain request by reference" { requestParser ->
-            val input = "https://example.com?request_uri=https%3A%2F%2Fclient.example.org%2Freq%2F1234567890"
+            val input = "https://example.com?request_uri=https%3A%2F%2Fclient.example.org%2Freq%2F1234567890&client_id=s6BhdRkqt3"
 
             requestParser.parseRequestParameters(input).getOrThrow().apply {
                 shouldBeInstanceOf<RequestParametersFrom<AuthenticationRequestParameters>>()
@@ -232,7 +232,7 @@ val OpenIdRequestParserTests by testSuite {
         )
     } - {
         "signed request by reference" { requestParser ->
-            val input = "https://example.com?request_uri=https%3A%2F%2Fclient.example.org%2Freq%2F1234567890"
+            val input = "https://example.com?request_uri=https%3A%2F%2Fclient.example.org%2Freq%2F1234567890&client_id=s6BhdRkqt3"
 
             requestParser.parseRequestParameters(input).getOrThrow().apply {
                 shouldBeInstanceOf<RequestParametersFrom<AuthenticationRequestParameters>>()

@@ -49,6 +49,7 @@ val RemoteResourceRetrieverFunctionTest by testSuite {
         val parser = RequestParser(remoteResourceRetriever = retriever::invoke)
         val input = URLBuilder("https://example.com").apply {
             parameters.append("request_uri", requestUri)
+            parameters.append("client_id", "somevalue")
         }.buildString()
 
         parser.parseRequestParameters(input).getOrThrow().apply {

@@ -76,7 +76,8 @@ class RequestParser(
         (this.parameters as? JarRequestParameters)?.let { extractRequest(it, this) } ?: this
 
     private fun String.parseFromParameters(): RequestParametersFrom<*>? = catchingUnwrapped {
-        Url(this).let {
+        val test = Url(this)
+        test.let {
             RequestParametersFrom.Uri(
                 url = it,
                 parameters = json.decodeFromJsonElement(
