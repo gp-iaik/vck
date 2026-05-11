@@ -5,7 +5,6 @@ fun interface SdJwtTypeMetadataDocumentIntegrityChecker {
         val DEFAULT = SignumSdJwtTypeMetadataDocumentIntegrityChecker
     }
 
-    @Throws
     suspend fun checkIntegrity(
         document: SdJwtTypeMetadataDocument,
         integrityHash: W3cSubresourceIntegrityMetadata,
