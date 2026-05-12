@@ -26,7 +26,7 @@ data class ContentSecurityPolicyBase64String(
 
     companion object {
         private val base64 = Base64.withPadding(
-            Base64.PaddingOption.ABSENT_OPTIONAL
+            Base64.PaddingOption.PRESENT_OPTIONAL
         )
     }
 
