@@ -31,10 +31,6 @@ kotlin {
             dependencies {
                 implementation(project.napier())
                 implementation(project.ktor("http"))
-                api("com.benasher44:uuid:${VcLibVersions.uuid}")
-                api("at.asitplus.signum:indispensable-cosef:${VcLibVersions.signum}")
-                api("at.asitplus.signum:indispensable-josef:${VcLibVersions.signum}")
-                api("at.asitplus:jsonpath4k:${VcLibVersions.jsonpath}")
             }
         }
     }
@@ -44,9 +40,6 @@ if ("true" != disableAppleTargets) exportXCFramework(
     "Rfc3986UriSyntax",
     transitiveExports = true,
     static = false,
-    "com.benasher44:uuid:${VcLibVersions.uuid}",
-    "at.asitplus.signum:indispensable-cosef:${VcLibVersions.signum}",
-    "at.asitplus.signum:indispensable-josef:${VcLibVersions.signum}",
 )
 
 val javadocJar = setupDokka(    baseUrl = "https://github.com/a-sit-plus/vck/tree/main/")

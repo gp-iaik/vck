@@ -33,10 +33,8 @@ kotlin {
                 implementation(project.ktor("http"))
                 implementation(ktor("client-core"))
                 api(project(":rfc3986-uri-syntax"))
-                api("com.benasher44:uuid:${VcLibVersions.uuid}")
                 api("at.asitplus.signum:supreme:${VcLibVersions.supreme}")
-                api("at.asitplus.signum:indispensable-cosef:${VcLibVersions.signum}")
-                api("at.asitplus.signum:indispensable-josef:${VcLibVersions.signum}")
+                api("at.asitplus.signum:indispensable:${VcLibVersions.signum}")
                 api("at.asitplus:jsonpath4k:${VcLibVersions.jsonpath}")
             }
         }
@@ -47,9 +45,8 @@ if ("true" != disableAppleTargets) exportXCFramework(
     "SdJwtTypeMetadata",
     transitiveExports = true,
     static = false,
-    "com.benasher44:uuid:${VcLibVersions.uuid}",
-    "at.asitplus.signum:indispensable-cosef:${VcLibVersions.signum}",
-    "at.asitplus.signum:indispensable-josef:${VcLibVersions.signum}",
+    "at.asitplus.signum:supreme:${VcLibVersions.supreme}",
+    "at.asitplus.signum:indispensable:${VcLibVersions.signum}",
     "at.asitplus:jsonpath4k:${VcLibVersions.jsonpath}",
 )
 
@@ -60,8 +57,8 @@ publishing {
         withType<MavenPublication> {
             if (this.name != "relocation") artifact(javadocJar)
             pom {
-                name.set("DIF Data Classes")
-                description.set("Kotlin Multiplatform data classes for Sd-JWT Type Metadata")
+                name.set("SD-JWT Type Data Classes")
+                description.set("Kotlin Multiplatform data classes for SD-JWT Type Metadata")
                 url.set("https://github.com/a-sit-plus/vck")
                 licenses {
                     license {
