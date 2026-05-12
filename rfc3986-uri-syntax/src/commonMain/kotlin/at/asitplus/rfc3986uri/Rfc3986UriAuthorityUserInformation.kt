@@ -35,12 +35,6 @@ value class Rfc3986UriAuthorityUserInformation(
         string.substringBefore(":")
     }
 
-//    @Suppress("POTENTIALLY_NON_REPORTED_ANNOTATION")
-//    @Deprecated("Usage of toString in user information is prohibited as a decision has to be made on whether to include sensitive information or not.", ReplaceWith("toString(includeSensitiveInformation)"))
-//    override fun toString() = throw UnsupportedOperationException(
-//        "Usage of toString() in user information is prohibited as a decision has to be made on whether to include sensitive information or not. Please use `toString(includeSensitiveInformation)` instead."
-//    )
-
     /**
      *       userinfo    = *( unreserved / pct-encoded / sub-delims / ":" )
      */
