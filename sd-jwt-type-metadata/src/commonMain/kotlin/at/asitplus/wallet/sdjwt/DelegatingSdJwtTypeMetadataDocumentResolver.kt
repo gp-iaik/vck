@@ -23,8 +23,8 @@ data class DelegatingSdJwtTypeMetadataDocumentResolver(
                 "Failed to resolve sd jwt type document for: $sdJwtVcType"
             )
             nextIntegrityHash?.let {
-                require(document.definition.vct == ancestry.last().definition.extends) {
-                    """Expected the extending type to specify the vct of the extended type in `extends`, but got `${ancestry.last().definition.extends}` instead of `${document.definition.vct}`."""
+                require(document.definition.vct == nextSdJwtVcType) {
+                    """Expected the extending type to specify the vct of the extended type in `extends`, but got `${nextSdJwtVcType}` instead of `${document.definition.vct}`."""
                 }
                 integrityChecker.checkIntegrity(
                     document,
