@@ -26,9 +26,9 @@ data class SdJwtTypeMetadataDefinition(
     @SerialName(SerialNames.EXTENDS_INTEGRITY)
     val extendsIntegrity: W3cSubresourceIntegrityMetadata? = null,
     @SerialName(SerialNames.DISPLAY)
-    val display: List<SdJwtTypeMetadataTypeDisplayInformation>? = null,
+    val display: SdJwtTypeMetadataTypeDisplayInformationList? = null,
     @SerialName(SerialNames.CLAIMS)
-    val claims: List<SdJwtTypeMetadataClaimInformation>? = null,
+    val claims: SdJwtTypeMetadataClaimInformationList? = null,
 ) {
     object SerialNames {
         const val VCT = "vct"
@@ -83,36 +83,8 @@ data class SdJwtTypeMetadataDefinition(
                     }
                     childClaimInfo.extendFrom(baseClaimInfo)
                 }.values.filterNotNull()
-            } ?: base.claims
+            }?.let(::SdJwtTypeMetadataClaimInformationList) ?: base.claims
         )
-    }
-
-    override fun equals(other: Any?): Boolean {
-        if (this === other) return true
-        if (other == null || this::class != other::class) return false
-
-        other as SdJwtTypeMetadataDefinition
-
-        if (vct != other.vct) return false
-        if (name != other.name) return false
-        if (description != other.description) return false
-        if (extends != other.extends) return false
-        if (extendsIntegrity != other.extendsIntegrity) return false
-        if (display != other.display) return false
-        if (claims?.sortedBy { it.path.toString() } != other.claims?.sortedBy { it.path.toString() }) return false
-
-        return true
-    }
-
-    override fun hashCode(): Int {
-        var result = vct.hashCode()
-        result = 31 * result + (name?.hashCode() ?: 0)
-        result = 31 * result + (description?.hashCode() ?: 0)
-        result = 31 * result + (extends?.hashCode() ?: 0)
-        result = 31 * result + (extendsIntegrity?.hashCode() ?: 0)
-        result = 31 * result + (display?.hashCode() ?: 0)
-        result = 31 * result + (claims?.hashCode() ?: 0)
-        return result
     }
 }
 

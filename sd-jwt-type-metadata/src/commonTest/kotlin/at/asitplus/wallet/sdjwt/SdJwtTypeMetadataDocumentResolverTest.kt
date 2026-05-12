@@ -26,12 +26,16 @@ val SdJwtTypeMetadataDocumentResolverTest by testSuite {
                 }
             """.trimIndent()
         )
+        val baseTypeIntegrity = SignumW3cSubresourceIntegrityMetadataBuilder.build(
+            baseType.original.toString().encodeToByteArray(),
+        )
         val extendingType = Json.decodeFromString(
             SdJwtTypeMetadataDocument.serializer(),
             """
                 {
                   "vct": "https://example.com/custom-type-metadata",
                   "extends": "https://example.com/base-type-metadata",
+                  "extends#integrity": "$baseTypeIntegrity",
                   "claims": [
                     {
                       "path": ["address", "city"],
@@ -94,7 +98,7 @@ val SdJwtTypeMetadataDocumentResolverTest by testSuite {
                     SdJwtTypeMetadataDocument.serializer(),
                     it
                 )
-            }
+            }.original.toString() shouldBe it
         }
     }
 }

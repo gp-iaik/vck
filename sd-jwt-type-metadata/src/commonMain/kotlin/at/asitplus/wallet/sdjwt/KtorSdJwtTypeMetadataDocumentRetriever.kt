@@ -20,12 +20,12 @@ class KtorSdJwtTypeMetadataDocumentRetriever(
     val httpClient: HttpClient,
     val clock: Clock,
 ) : SdJwtTypeMetadataDocumentRetriever {
-    private val staticCache = mutableMapOf<SdJwtVcType, SdJwtTypeMetadataDocument>()
+    private val staticCache = mutableMapOf<SdJwtVcType, Pair<W3cSubresourceIntegrityMetadata, SdJwtTypeMetadataDocument>>()
     private val dynamicCache = mutableMapOf<SdJwtVcType, Pair<Instant, SdJwtTypeMetadataDocument>>()
 
     override suspend fun retrieve(
         sdJwtVcType: SdJwtVcType,
-        isStatic: Boolean
+        integrityMetadata: W3cSubresourceIntegrityMetadata?,
     ): SdJwtTypeMetadataDocument? {
         val uri = runCatching {
             Rfc3986UniformResourceIdentifier.Companion(sdJwtVcType.string)
@@ -35,8 +35,12 @@ class KtorSdJwtTypeMetadataDocumentRetriever(
             return null
         }
 
-        staticCache[sdJwtVcType]?.let {
-            return it
+        staticCache[sdJwtVcType]?.let { (integrity, document) ->
+            // TODO: when/how to invalidate static cache? Relying on client-provided integrity changes for now
+            if(integrityMetadata == null || integrityMetadata == integrity) {
+                return document
+            }
+            staticCache.remove(sdJwtVcType)
         }
         dynamicCache[sdJwtVcType]?.let { (validUntil, document) ->
             if (clock.now() < validUntil) {
@@ -48,8 +52,9 @@ class KtorSdJwtTypeMetadataDocumentRetriever(
         val response = httpClient.get(uri.string)
         if (response.status == HttpStatusCode.OK) {
             val document = response.body<SdJwtTypeMetadataDocument>()
-            if (isStatic) {
-                staticCache[sdJwtVcType] = document
+            if (integrityMetadata != null) {
+                // we assume the integrity metadata to be validated by the caller
+                staticCache[sdJwtVcType] = integrityMetadata to document
             } else {
                 addToCache(
                     document = document,

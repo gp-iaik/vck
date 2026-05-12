@@ -18,14 +18,14 @@ data class DelegatingSdJwtTypeMetadataDocumentResolver(
             }
             val document = documentRetriever.retrieve(
                 nextSdJwtVcType,
-                isStatic = nextIntegrityHash != null
+                nextIntegrityHash
             ) ?: throw IllegalStateException(
                 "Failed to resolve sd jwt type document for: $sdJwtVcType"
             )
+            require(document.definition.vct == nextSdJwtVcType) {
+                """Expected the extending type to specify the vct of the extended type in `extends`, but got `${nextSdJwtVcType}` instead of `${document.definition.vct}`."""
+            }
             nextIntegrityHash?.let {
-                require(document.definition.vct == nextSdJwtVcType) {
-                    """Expected the extending type to specify the vct of the extended type in `extends`, but got `${nextSdJwtVcType}` instead of `${document.definition.vct}`."""
-                }
                 integrityChecker.checkIntegrity(
                     document,
                     it,

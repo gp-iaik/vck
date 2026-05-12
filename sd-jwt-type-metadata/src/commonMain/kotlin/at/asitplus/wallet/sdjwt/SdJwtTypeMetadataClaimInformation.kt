@@ -24,7 +24,7 @@ data class SdJwtTypeMetadataClaimInformation(
     @SerialName(SerialNames.PATH)
     val path: SdJwtTypeMetadataClaimInformationPath,
     @SerialName(SerialNames.DISPLAY)
-    val display: List<SdJwtTypeMetadataClaimInformationDisplayMetadata>? = null,
+    val display: SdJwtTypeMetadataClaimInformationDisplayMetadataList? = null,
     @SerialName(SerialNames.MANDATORY)
     val isMandatory: Boolean = false,
     @SerialName(SerialNames.SD)
@@ -67,29 +67,5 @@ data class SdJwtTypeMetadataClaimInformation(
                 true
             }
         }
-    }
-
-    override fun equals(other: Any?): Boolean {
-        if (this === other) return true
-        if (other == null || this::class != other::class) return false
-
-        other as SdJwtTypeMetadataClaimInformation
-
-        if (isMandatory != other.isMandatory) return false
-        if (path != other.path) return false
-        if (display?.sortedBy { it.locale.string } != other.display?.sortedBy { it.locale.string }) return false
-        if (selectiveDisclosureConstraints != other.selectiveDisclosureConstraints) return false
-        if (svgId != other.svgId) return false
-
-        return true
-    }
-
-    override fun hashCode(): Int {
-        var result = isMandatory.hashCode()
-        result = 31 * result + path.hashCode()
-        result = 31 * result + (display?.sortedBy { it.locale.string }?.hashCode() ?: 0)
-        result = 31 * result + selectiveDisclosureConstraints.hashCode()
-        result = 31 * result + (svgId?.hashCode() ?: 0)
-        return result
     }
 }

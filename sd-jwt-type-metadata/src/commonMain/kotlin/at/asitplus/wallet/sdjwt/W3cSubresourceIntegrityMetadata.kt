@@ -1,6 +1,8 @@
 package at.asitplus.wallet.sdjwt
 
+import at.asitplus.csp2.ContentSecurityPolicyBase64String
 import at.asitplus.csp2.ContentSecurityPolicySourceExpressionHash
+import at.asitplus.csp2.ContentSecurityPolicySourceExpressionHashAlgorithm
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.descriptors.PrimitiveKind
@@ -25,6 +27,16 @@ value class W3cSubresourceIntegrityMetadata(
 ) {
     constructor(string: String): this(
         ContentSecurityPolicySourceExpressionHash.Companion("'$string'")
+    )
+
+    constructor(
+        algorithm: ContentSecurityPolicySourceExpressionHashAlgorithm,
+        hashValue: ByteArray,
+    ): this(
+        ContentSecurityPolicySourceExpressionHash(
+            algorithm = algorithm,
+            hashValue = ContentSecurityPolicyBase64String(hashValue)
+        )
     )
 
     val algorithm

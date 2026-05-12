@@ -11,6 +11,6 @@ value class SdJwtTypeMetadataDocumentRegistry(
 
     override suspend fun retrieve(
         sdJwtVcType: SdJwtVcType,
-        isStatic: Boolean
+        integrityMetadata: W3cSubresourceIntegrityMetadata?
     ) = delegate[sdJwtVcType]
 }

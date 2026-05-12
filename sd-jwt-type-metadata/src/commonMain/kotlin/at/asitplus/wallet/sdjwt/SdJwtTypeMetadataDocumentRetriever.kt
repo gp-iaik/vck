@@ -8,6 +8,6 @@ fun interface SdJwtTypeMetadataDocumentRetriever {
          * Type Metadata as defined in Section 5, the Consumer MAY assume that the Type Metadata is static and can be
          * cached indefinitely. Otherwise
          */
-        isStatic: Boolean,
+        integrityMetadata: W3cSubresourceIntegrityMetadata?,
     ): SdJwtTypeMetadataDocument?
 }

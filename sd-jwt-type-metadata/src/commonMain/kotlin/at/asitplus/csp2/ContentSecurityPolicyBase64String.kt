@@ -12,14 +12,22 @@ import kotlin.io.encoding.Base64
 data class ContentSecurityPolicyBase64String(
     val string: String,
 ) {
+    constructor(byteArray: ByteArray): this(
+        base64.encode(byteArray)
+    )
+
     // basically already a validation as well
     val byteArray = try {
         // TODO: is this maybe too strict for CSP?
-        Base64.withPadding(
-            Base64.PaddingOption.ABSENT_OPTIONAL
-        ).decode(string)
+        base64.decode(string)
     } catch (it: Throwable) {
         throw Exception("Expected string to be a valid base64-encoded string, but got `${string}`.", it)
+    }
+
+    companion object {
+        private val base64 = Base64.withPadding(
+            Base64.PaddingOption.ABSENT_OPTIONAL
+        )
     }
 
     class InlineSerializer : KSerializer<ContentSecurityPolicyBase64String> {

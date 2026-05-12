@@ -8,11 +8,11 @@ value class DelegatingSdJwtTypeMetadataDocumentRetriever(
 ): Collection<SdJwtTypeMetadataDocumentRetriever> by delegates, SdJwtTypeMetadataDocumentRetriever {
     override suspend fun retrieve(
         sdJwtVcType: SdJwtVcType,
-        isStatic: Boolean
+        integrityMetadata: W3cSubresourceIntegrityMetadata?
     ) = delegates.firstNotNullOfOrNull {
         it.retrieve(
             sdJwtVcType = sdJwtVcType,
-            isStatic = isStatic,
+            integrityMetadata = integrityMetadata,
         )
     }
 }

@@ -2,7 +2,7 @@ package at.asitplus.wallet.sdjwt
 
 data class DelegatingSdJwtTypeMetadataDocumentIntegrityChecker(
     val subresourceIntegrityChecker: W3cSubresourceIntegrityChecker
-): SdJwtTypeMetadataDocumentIntegrityChecker {
+) : SdJwtTypeMetadataDocumentIntegrityChecker {
     override suspend fun checkIntegrity(
         document: SdJwtTypeMetadataDocument,
         integrityHash: W3cSubresourceIntegrityMetadata,

@@ -18,7 +18,7 @@ val SignumW3cSubresourceIntegrityCheckerTest by testSuite {
             }
         ) {
             shouldNotThrowAny {
-                SignumW3cSubresourceIntegrityChecker.checkIntegrity(
+                SignumW3cSubresourceIntegrityMetadataBuilder.checkIntegrity(
                     data = it.first,
                     integrityHash = it.second
                 )
