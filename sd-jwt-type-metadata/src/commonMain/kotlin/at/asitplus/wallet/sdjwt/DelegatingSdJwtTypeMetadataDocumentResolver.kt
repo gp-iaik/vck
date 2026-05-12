@@ -22,7 +22,7 @@ data class DelegatingSdJwtTypeMetadataDocumentResolver(
             ) ?: throw IllegalStateException(
                 "Failed to resolve sd jwt type document for: $sdJwtVcType"
             )
-            require(document.definition.vct == nextSdJwtVcType) {
+            check(document.definition.vct == nextSdJwtVcType) {
                 """Expected the extending type to specify the vct of the extended type in `extends`, but got `${nextSdJwtVcType}` instead of `${document.definition.vct}`."""
             }
             nextIntegrityHash?.let {
