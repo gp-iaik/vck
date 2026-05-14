@@ -124,7 +124,7 @@ value class SdJwtTypeMetadataClaimInformationPath(
                 "Expected decoder to be JsonDecoder, but was $decoder"
             }
             val jsonElement = decoder.decodeJsonElement().jsonPrimitive
-            require(jsonElement.booleanOrNull == null) {
+            require(jsonElement.isString || jsonElement.booleanOrNull == null) {
                 "Expected content to be a string, `null` or a non-negative integer, but was: $jsonElement"
             }
 

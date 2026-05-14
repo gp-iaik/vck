@@ -106,7 +106,7 @@ VC-K uses a modular structure to separate concerns. Hence, depending on the use 
 | `csc-data-classes`     | [CSC](https://cloudsignatureconsortium.org/wp-content/uploads/2025/01/csc-api-2.1.0.1.pdf) data classes. **Does not depend on any other vck artefact** and can hence be used independently of VC-K!                                 |
 | `etsi-data-classes`    | [ETSI TS 119 602](https://www.etsi.org/deliver/etsi_ts/119600_119699/119602/01.01.01_60/ts_119602v010101p.pdf) data classes. **Does not depend on any other vck artefact** and can hence be used independently of VC-K!             |
 | `rfc3986-uri-syntax`   | [RFC 3986 URI Syntax](https://datatracker.ietf.org/doc/html/rfc3986) data classes. **Does not depend on any other vck artefact** and can hence be used independently of VC-K!                                                       |
-| `sd-jwt-type-metadata` | [SD-JWT VC](https://datatracker.ietf.org/doc/draft-ietf-oauth-sd-jwt-vc/) type metadata data classes. **Only depends on `rfc3986-uri-syntax-data-classes`** and can hence be used independently of VC-K!                            |
+| `sd-jwt-type-metadata` | [SD-JWT VC](https://datatracker.ietf.org/doc/draft-ietf-oauth-sd-jwt-vc/) type metadata data classes. **Only depends on `rfc3986-uri-syntax`** and can hence be used independently of VC-K!                                         |
 
 Simply declare the desired dependency to get going. This will usually be one of:
 

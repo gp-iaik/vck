@@ -37,7 +37,7 @@ data class SdJwtTypeMetadataDocument(
 
         override fun deserialize(decoder: Decoder): SdJwtTypeMetadataDocument {
             require(decoder is JsonDecoder) {
-                "Expected decoder to be JsonDeocder, but got `$decoder`."
+                "Expected decoder to be JsonDecoder, but got `$decoder`."
             }
 
             val jsonElement = decoder.decodeJsonElement()

@@ -23,7 +23,7 @@ data class DelegatingSdJwtTypeMetadataDocumentResolver(
                 "Failed to resolve sd jwt type document for: $sdJwtVcType"
             )
             check(document.definition.vct == nextSdJwtVcType) {
-                """Expected the extending type to specify the vct of the extended type in `extends`, but got `${nextSdJwtVcType}` instead of `${document.definition.vct}`."""
+                """Expected the retrieved document's vct to be `${nextSdJwtVcType}`, but got `${document.definition.vct}`."""
             }
             nextIntegrityHash?.let {
                 integrityChecker.checkIntegrity(
