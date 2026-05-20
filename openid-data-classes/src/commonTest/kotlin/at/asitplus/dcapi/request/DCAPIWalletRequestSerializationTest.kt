@@ -4,8 +4,13 @@ import at.asitplus.dcapi.request.verifier.testIsoMdocRequest
 import at.asitplus.dcapi.request.verifier.testSignedOpenId4VpRequest
 import at.asitplus.dcapi.request.verifier.testUnsignedOpenId4VpRequest
 import at.asitplus.openid.AuthenticationRequestParameters
+import at.asitplus.openid.JarRequestParameters
 import at.asitplus.signum.indispensable.josef.JwsCompactTyped
+import at.asitplus.signum.indispensable.josef.JwsFlattened
+import at.asitplus.signum.indispensable.josef.JwsGeneralTyped
 import at.asitplus.signum.indispensable.josef.io.joseCompliantSerializer
+import at.asitplus.signum.indispensable.josef.toJwsFlattened
+import at.asitplus.signum.indispensable.josef.toJwsGeneral
 import at.asitplus.signum.indispensable.josef.typed
 import de.infix.testBalloon.framework.core.testSuite
 import io.kotest.matchers.shouldBe
@@ -38,6 +43,24 @@ val DCAPIWalletRequestSerializationTest by testSuite {
             callingOrigin = "https://wallet.a-sit.at"
         )
         walletRequest.request.shouldNotContain("\"")
+
+        val encoded = joseCompliantSerializer.encodeToString<DCAPIWalletRequest>(walletRequest)
+        encoded.shouldContain("\"credentialIds\"")
+        encoded.shouldNotContain("\"credentialId\"")
+        val decoded = joseCompliantSerializer.decodeFromString<DCAPIWalletRequest>(encoded)
+
+        decoded shouldBe walletRequest
+    }
+
+    test("openid4vp multisigned request round-trips") {
+        val requestElement: JwsFlattened = testSignedOpenId4VpRequest.data.request.toJwsFlattened()
+        val request: JwsGeneralTyped<AuthenticationRequestParameters> = (0..5).map { requestElement }.toJwsGeneral().typed()
+        val walletRequest = DCAPIWalletRequest.OpenId4VpMultiSigned(
+            request = request,
+            credentialIds = listOf("044c78be429198ffc2a66d935ff86e4e2bdb8ca2ab0cd1bacc85f3a73d8347b4"),
+            callingPackageName = "com.android.chrome",
+            callingOrigin = "https://wallet.a-sit.at"
+        )
 
         val encoded = joseCompliantSerializer.encodeToString<DCAPIWalletRequest>(walletRequest)
         encoded.shouldContain("\"credentialIds\"")
