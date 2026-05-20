@@ -1,6 +1,9 @@
 package at.asitplus.dcapi.request
 
 import at.asitplus.openid.AuthenticationRequestParameters
+import at.asitplus.openid.JarRequestParameters
+import at.asitplus.openid.RequestParameters
+import at.asitplus.signum.indispensable.josef.JWS
 import at.asitplus.signum.indispensable.josef.JwsCompactTyped
 import at.asitplus.signum.indispensable.josef.JwsGeneralTyped
 import at.asitplus.signum.indispensable.josef.io.joseCompliantSerializer
@@ -64,7 +67,7 @@ sealed interface DCAPIWalletRequest {
             callingPackageName: String,
             callingOrigin: String,
         ) : this(
-            request = joseCompliantSerializer.encodeToString(request),
+            request = joseCompliantSerializer.encodeToString(request.jws ),
             credentialIds = credentialIds,
             callingPackageName = callingPackageName,
             callingOrigin = callingOrigin
