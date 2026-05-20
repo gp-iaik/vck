@@ -40,11 +40,7 @@ sealed class RequestParametersFrom<S : RequestParameters> {
         override val verified: Boolean,
         @SerialName(SerialNames.PARENT)
         val parent: Url? = null,
-    ) : RequestParametersSigned<T>() {
-        override fun toString(): String {
-            return "jws(parent='$parent', jws=$jws, parameters=$parameters, verified=$verified)"
-        }
-    }
+    ) : RequestParametersSigned<T>()
 
     @Serializable
     @SerialName(SerialNames.TYPE_DCAPI_MULTISIGNED)
@@ -57,12 +53,7 @@ sealed class RequestParametersFrom<S : RequestParameters> {
         override val jws: JwsGeneral,
         @SerialName(SerialNames.VERIFIED)
         override val verified: Boolean,
-    ) : RequestParametersSigned<T>(), DcApiRequest {
-        override fun toString(): String {
-            return "DcApiMultiSigned(dcApiRequest=$dcApiRequest, parameters=$parameters, jws=$jws)"
-        }
-
-    }
+    ) : RequestParametersSigned<T>(), DcApiRequest
 
     @Serializable
     @SerialName(SerialNames.TYPE_DCAPI_SIGNED)
@@ -76,11 +67,7 @@ sealed class RequestParametersFrom<S : RequestParameters> {
         override val jws: at.asitplus.signum.indispensable.josef.JwsCompact,
         @SerialName(SerialNames.VERIFIED)
         override val verified: Boolean,
-    ) : RequestParametersSigned<T>(), DcApiRequest {
-        override fun toString(): String {
-            return "DcApiSigned(dcApiRequest=$dcApiRequest, parameters=$parameters, jws=$jws)"
-        }
-    }
+    ) : RequestParametersSigned<T>(), DcApiRequest
 
     @Serializable
     @SerialName(SerialNames.TYPE_DCAPI_UNSIGNED)
@@ -91,11 +78,7 @@ sealed class RequestParametersFrom<S : RequestParameters> {
         override val parameters: T,
         @SerialName(SerialNames.JSON_STRING)
         val jsonString: String,
-    ) : DcApiRequest, RequestParametersFrom<T>() {
-        override fun toString(): String {
-            return "DcApiUnsigned(dcApiRequest=$dcApiRequest, parameters=$parameters, jsonString='$jsonString')"
-        }
-    }
+    ) : DcApiRequest, RequestParametersFrom<T>()
 
     @Serializable
     @SerialName(SerialNames.TYPE_URI)
@@ -104,11 +87,7 @@ sealed class RequestParametersFrom<S : RequestParameters> {
         val url: Url,
         @SerialName(SerialNames.PARAMETERS)
         override val parameters: T,
-    ) : RequestParametersFrom<T>() {
-        override fun toString(): String {
-            return "Uri(url=$url, parameters=$parameters)"
-        }
-    }
+    ) : RequestParametersFrom<T>()
 
     @Serializable
     @SerialName(SerialNames.TYPE_JSON)
@@ -119,11 +98,7 @@ sealed class RequestParametersFrom<S : RequestParameters> {
         override val parameters: T,
         @SerialName(SerialNames.PARENT)
         val parent: Url? = null,
-    ) : RequestParametersFrom<T>() {
-        override fun toString(): String {
-            return "Json(parent='$parent', jsonString='$jsonString', parameters=$parameters)"
-        }
-    }
+    ) : RequestParametersFrom<T>()
 
     object SerialNames {
         const val TYPE_JWS = "Jws"
