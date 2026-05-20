@@ -8,6 +8,7 @@ import at.asitplus.signum.indispensable.josef.JwsCompactStringSerializer
 import at.asitplus.signum.indispensable.josef.JwsGeneral
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import kotlinx.serialization.json.JsonClassDiscriminator
 
 @Serializable
@@ -26,6 +27,10 @@ sealed class DigitalCredentialGetRequest {
     ) : DigitalCredentialGetRequest() {
         override val protocol: ExchangeProtocolIdentifier
             get() = ExchangeProtocolIdentifier.IsoMdocAnnexC
+
+        @Transient
+        @Deprecated("Renamed", replaceWith = ReplaceWith("data"))
+        val request: IsoMdocRequest = data
     }
 
     sealed interface OpenId4Vp {
@@ -51,6 +56,11 @@ sealed class DigitalCredentialGetRequest {
     ) : DigitalCredentialGetRequest(), OpenId4Vp {
         override val protocol: ExchangeProtocolIdentifier
             get() = ExchangeProtocolIdentifier.OpenId4VpV1Signed
+
+
+        @Transient
+        @Deprecated("Renamed", replaceWith = ReplaceWith("data"))
+        val request: OpenId4Vp.SignedDataElement = data
     }
 
     @Serializable
@@ -60,7 +70,7 @@ sealed class DigitalCredentialGetRequest {
         override val data: OpenId4Vp.MultiSignedDataElement,
     ) : DigitalCredentialGetRequest(), OpenId4Vp {
         override val protocol: ExchangeProtocolIdentifier
-            get() = ExchangeProtocolIdentifier.OpenId4VpV1Signed
+            get() = ExchangeProtocolIdentifier.OpenId4VpV1Multisigned
     }
 
     @Serializable
@@ -71,6 +81,11 @@ sealed class DigitalCredentialGetRequest {
     ) : DigitalCredentialGetRequest(), OpenId4Vp {
         override val protocol: ExchangeProtocolIdentifier
             get() = ExchangeProtocolIdentifier.OpenId4VpV1Unsigned
+
+        @Transient
+        @Deprecated("Renamed", replaceWith = ReplaceWith("data"))
+        val request: AuthenticationRequestParameters = data
+
     }
 
     object SerialNames {
