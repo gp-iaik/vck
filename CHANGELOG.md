@@ -2,7 +2,8 @@
 
 Release 6.0.0 (unreleased):
  - JWS:
-   - BREAKING Change: Replace `JwsSigned` with `JwsCompact` and `JwsCompactTyped` in signing, verification, OpenID request/response, OAuth 2.0 DPoP/client attestation, OID4VCI proof, JWT VC, status list JWT, and SD-JWT APIs
+   - BREAKING: Replace `JwsSigned` with `JwsCompact` and `JwsCompactTyped` in signing, verification, OpenID request/response, OAuth 2.0 DPoP/client attestation, OID4VCI proof, JWT VC, status list JWT, and SD-JWT APIs
+   - BREAKING: Refactor `RequestParametersFromSigned.jwsSigned` from `JwsSigned` to `JWS` to allow multisigned use-cases
    - Remove `JwsSignedSerializer`, use `JwsCompactStringSerializer`
  - SD-JWT:
    - BREAKING CHANGE: Removed dot-notation shorthand for nested claims in `ClaimToBeIssued`. Claims with dots in their names (e.g. `address.region`) are now issued as flat claims with a literal dot in the key. Use a `Collection<ClaimToBeIssued>` in `value` to create nested structures.
@@ -12,9 +13,17 @@ Release 6.0.0 (unreleased):
    - Change: `SdJwtSigned` now stores the issuer JWS as `JwsCompact` and key binding JWS as `JwsCompactTyped<KeyBindingJws>`
    - Deprecate `SdJwtSigned.getPayloadAsVerifiableCredentialSdJwt()` and `SdJwtSigned.getPayloadAsJsonObject()`, use `SdJwtSigned.jws.getPayload<...>()`
  - OpenID for Verifiable Presentations:
+   - Add `DcApiMultiSigned` member to `RequestParameterFrom` sealed class
    - Add `attributePaths` and `optionalAttributePaths` to `RequestOptionsCredential` for requesting literal claim names containing dots with `DCQLClaimsPathPointer`, while keeping the deprecated string attributes as nested dot-notation shorthand. ISO mdoc requests also accept explicit namespace/name paths and prefix single claim names with the credential scheme namespace.
    - Change: `RequestInfo.dpop`/`RequestInfo.clientAttestation`/`RequestInfo.clientAttestationDpop` now `JwsCompactTyped` instead of `String`
    - Change: `BuildDPoPHeader`/`BuildClientAttestationJwt`/`BuildClientAttestationPoPJwt` objects now return `JwsCompactTyped` instead of `String`
+   - Change `JarRequestParameter.clientId` from optional to mandatory to enforce RFC9101 definition.
+ - Digital Credentials API:
+   - Add `OpenId4VpMultisigned` member to `DCAPIWalletRequest` sealed class
+   - BREAKING: Refactor `DCAPIWalletRequest.request` from `RequestParameter` to `String` to more narrowly convey content (`JWS` or `JsonString`)
+   - BREAKING: Refactor `DigitalCredentialGetRequest.OpenId4Vp`
+     - Renamed `request` to `data` to reflect serial name
+     - Introduced `SignedDataElement` `MultiSignedDataElement` wrapper to keep serialization shape
  - Deprecations:
    - Remove code deprecated in 5.12.0, e.g. `CredentialSubject` as base class for JWT VC
    - Deprecate `vckJsonSerializer`, should be replaced with `joseCompliantSerializer` (Signum)
