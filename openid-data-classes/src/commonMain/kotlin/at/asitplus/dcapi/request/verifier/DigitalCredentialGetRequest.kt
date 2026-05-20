@@ -16,14 +16,11 @@ import kotlinx.serialization.json.JsonClassDiscriminator
 sealed class DigitalCredentialGetRequest {
     abstract val protocol: ExchangeProtocolIdentifier
 
-    @SerialName(SerialNames.DATA)
-    abstract val data: Any
-
     @Serializable
     @SerialName(SerialNames.ORG_ISO_MDOC)
     data class IsoMdoc(
         @SerialName(SerialNames.DATA)
-        override val data: IsoMdocRequest,
+        val data: IsoMdocRequest,
     ) : DigitalCredentialGetRequest() {
         override val protocol: ExchangeProtocolIdentifier
             get() = ExchangeProtocolIdentifier.IsoMdocAnnexC
@@ -52,7 +49,7 @@ sealed class DigitalCredentialGetRequest {
     @SerialName(SerialNames.OPENID4VP_V1_SIGNED)
     data class OpenId4VpSigned(
         @SerialName(SerialNames.DATA)
-        override val data: OpenId4Vp.SignedDataElement,
+        val data: OpenId4Vp.SignedDataElement,
     ) : DigitalCredentialGetRequest(), OpenId4Vp {
         override val protocol: ExchangeProtocolIdentifier
             get() = ExchangeProtocolIdentifier.OpenId4VpV1Signed
@@ -67,7 +64,7 @@ sealed class DigitalCredentialGetRequest {
     @SerialName(SerialNames.OPENID4VP_V1_MULTISIGNED)
     data class OpenId4VpMultiSigned(
         @SerialName(SerialNames.DATA)
-        override val data: OpenId4Vp.MultiSignedDataElement,
+        val data: OpenId4Vp.MultiSignedDataElement,
     ) : DigitalCredentialGetRequest(), OpenId4Vp {
         override val protocol: ExchangeProtocolIdentifier
             get() = ExchangeProtocolIdentifier.OpenId4VpV1Multisigned
@@ -77,7 +74,7 @@ sealed class DigitalCredentialGetRequest {
     @SerialName(SerialNames.OPENID4VP_V1_UNSIGNED)
     data class OpenId4VpUnsigned(
         @SerialName(SerialNames.DATA)
-        override val data: AuthenticationRequestParameters,
+        val data: AuthenticationRequestParameters,
     ) : DigitalCredentialGetRequest(), OpenId4Vp {
         override val protocol: ExchangeProtocolIdentifier
             get() = ExchangeProtocolIdentifier.OpenId4VpV1Unsigned
