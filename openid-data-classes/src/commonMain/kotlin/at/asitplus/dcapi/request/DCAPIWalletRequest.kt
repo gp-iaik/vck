@@ -90,6 +90,24 @@ sealed interface DCAPIWalletRequest {
         override val callingOrigin: String,
     ) : DCAPIWalletRequest, OpenId4Vp() {
 
+        @Deprecated(
+            "Changed request type from RequestParameter to JwsCompactTyped<AuthenticationRequestParameters>. Wrapping with `JarRequestParameters` is no longer necessary",
+            replaceWith = ReplaceWith(
+                "OpenId4VpSigned(request = (request as JarRequestParameters).request, credentialIds = credentialIds, callingPackageName = callingPackageName, callingOrigin = callingOrigin)"
+            )
+        )
+        constructor(
+            request: RequestParameters,
+            credentialIds: Collection<String>,
+            callingPackageName: String,
+            callingOrigin: String,
+        ) : this(
+            request = (request as JarRequestParameters).request.toString(),
+            credentialIds = credentialIds,
+            callingPackageName = callingPackageName,
+            callingOrigin = callingOrigin
+        )
+
         constructor(
             request: JwsCompactTyped<AuthenticationRequestParameters>,
             credentialIds: List<String>,
