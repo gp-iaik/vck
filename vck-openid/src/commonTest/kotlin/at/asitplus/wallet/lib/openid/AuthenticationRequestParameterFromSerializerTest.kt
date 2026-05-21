@@ -5,8 +5,6 @@ import at.asitplus.dif.DifInputDescriptor
 import at.asitplus.openid.AuthenticationRequestParameters
 import at.asitplus.openid.JarRequestParameters
 import at.asitplus.openid.RequestParametersFrom
-import at.asitplus.signum.indispensable.josef.JwsCompact
-import at.asitplus.signum.indispensable.josef.JwsCompactTyped
 import at.asitplus.signum.indispensable.josef.JwsTyped
 import at.asitplus.signum.indispensable.josef.io.joseCompliantSerializer
 import at.asitplus.testballoon.invoke
@@ -80,7 +78,11 @@ val AuthenticationRequestParameterFromSerializerTest by testSuite {
 
         "DcApiUnsigned test $representation" {
             val authnRequest = DCAPIWalletRequest.OpenId4VpUnsigned(
-                request = verifierOid4vp.createAuthnRequest(requestOptions = reqOptions),
+                request = DCAPIWalletRequest.OpenId4Vp.OpenId4VpRequest.Unsigned(
+                    verifierOid4vp.createAuthnRequest(
+                        requestOptions = reqOptions
+                    )
+                ),
                 credentialIds = listOf("1"),
                 callingPackageName = "com.example.app",
                 callingOrigin = "https://example.com"
@@ -119,7 +121,7 @@ val AuthenticationRequestParameterFromSerializerTest by testSuite {
             jarRequest.clientId shouldBe clientId
             val serializedRequest = jarRequest.request.shouldNotBeNull()
             val authnRequest = DCAPIWalletRequest.OpenId4VpSigned(
-                request = JwsTyped(serializedRequest),
+                request = DCAPIWalletRequest.OpenId4Vp.OpenId4VpRequest.JwsCompact(JwsTyped(serializedRequest)),
                 credentialIds = listOf("1"),
                 callingPackageName = "com.example.app",
                 callingOrigin = "https://example.com"
