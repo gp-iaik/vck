@@ -86,7 +86,7 @@ sealed interface DCAPIWalletRequest {
 
             @JvmInline
             @Serializable
-            value class Json(
+            value class Unsigned(
                 val request: AuthenticationRequestParameters,
             ) : OpenId4VpRequest
         }
@@ -145,7 +145,7 @@ sealed interface DCAPIWalletRequest {
     @Serializable
     data class OpenId4VpUnsigned(
         @SerialName("request")
-        override val request: OpenId4VpRequest.Json,
+        override val request: OpenId4VpRequest.Unsigned,
         @SerialName("credentialIds")
         override val credentialIds: Collection<String>,
         @SerialName("callingPackageName")
