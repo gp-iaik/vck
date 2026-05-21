@@ -3,13 +3,18 @@ package at.asitplus.dcapi.request
 import at.asitplus.openid.AuthenticationRequestParameters
 import at.asitplus.openid.JarRequestParameters
 import at.asitplus.openid.RequestParameters
+import at.asitplus.signum.indispensable.io.TransformingSerializerTemplate
 import at.asitplus.signum.indispensable.josef.JWS
-import at.asitplus.signum.indispensable.josef.JwsCompactTyped
-import at.asitplus.signum.indispensable.josef.JwsGeneralTyped
-import at.asitplus.signum.indispensable.josef.io.joseCompliantSerializer
+import at.asitplus.signum.indispensable.josef.JwsCompactStringSerializer
+import at.asitplus.signum.indispensable.josef.JwsTyped
+import at.asitplus.signum.indispensable.josef.typed
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonClassDiscriminator
+import kotlin.jvm.JvmInline
+import at.asitplus.signum.indispensable.josef.JwsCompact as JosefJwsCompact
+import at.asitplus.signum.indispensable.josef.JwsGeneral as JosefJwsGeneral
 
 /**
  * Abstract base class for requests received by the wallet via the Digital Credentials API.
@@ -44,15 +49,53 @@ sealed interface DCAPIWalletRequest {
     }
 
     sealed class OpenId4Vp : DCAPIWalletRequest {
-        abstract val request: String
+        abstract val request: OpenId4VpRequest
         abstract override val protocol: ExchangeProtocolIdentifier
+
+
+        sealed interface OpenId4VpRequest {
+            @JvmInline
+            @Serializable(with = JwsCompact.Serializer::class)
+            value class JwsCompact(
+                val request: JwsTyped<JosefJwsCompact, AuthenticationRequestParameters>
+            ) : OpenId4VpRequest {
+                object Serializer : KSerializer<JwsCompact> by TransformingSerializerTemplate(
+                    parent = JwsTypedSerializerTemplate(
+                        JwsCompactStringSerializer,
+                        AuthenticationRequestParameters.serializer()
+                    ),
+                    encodeAs = JwsCompact::request,
+                    decodeAs = ::JwsCompact,
+                )
+            }
+
+            @JvmInline
+            @Serializable(with = JwsGeneral.Serializer::class)
+            value class JwsGeneral(
+                val request: JwsTyped<JosefJwsGeneral, AuthenticationRequestParameters>
+            ) : OpenId4VpRequest {
+                object Serializer : KSerializer<JwsGeneral> by TransformingSerializerTemplate(
+                    parent = JwsTypedSerializerTemplate(
+                        JosefJwsGeneral.serializer(),
+                        AuthenticationRequestParameters.serializer()
+                    ),
+                    encodeAs = JwsGeneral::request,
+                    decodeAs = ::JwsGeneral,
+                )
+            }
+
+            @JvmInline
+            @Serializable
+            value class Json(
+                val request: AuthenticationRequestParameters,
+            ) : OpenId4VpRequest
+        }
     }
 
-    @ConsistentCopyVisibility
     @Serializable
-    data class OpenId4VpMultiSigned private constructor(
+    data class OpenId4VpMultiSigned(
         @SerialName("request")
-        override val request: String,
+        override val request: OpenId4VpRequest.JwsGeneral,
         @SerialName("credentialIds")
         override val credentialIds: Collection<String>,
         @SerialName("callingPackageName")
@@ -61,27 +104,14 @@ sealed interface DCAPIWalletRequest {
         override val callingOrigin: String,
     ) : OpenId4Vp() {
 
-        constructor(
-            request: JwsGeneralTyped<AuthenticationRequestParameters>,
-            credentialIds: List<String>,
-            callingPackageName: String,
-            callingOrigin: String,
-        ) : this(
-            request = joseCompliantSerializer.encodeToString(request.jws ),
-            credentialIds = credentialIds,
-            callingPackageName = callingPackageName,
-            callingOrigin = callingOrigin
-        )
-
         override val protocol: ExchangeProtocolIdentifier
             get() = ExchangeProtocolIdentifier.OpenId4VpV1Multisigned
     }
 
-    @ConsistentCopyVisibility
     @Serializable
-    data class OpenId4VpSigned private constructor(
+    data class OpenId4VpSigned(
         @SerialName("request")
-        override val request: String,
+        override val request: OpenId4VpRequest.JwsCompact,
         @SerialName("credentialIds")
         override val credentialIds: Collection<String>,
         @SerialName("callingPackageName")
@@ -102,19 +132,7 @@ sealed interface DCAPIWalletRequest {
             callingPackageName: String,
             callingOrigin: String,
         ) : this(
-            request = (request as JarRequestParameters).request.toString(),
-            credentialIds = credentialIds,
-            callingPackageName = callingPackageName,
-            callingOrigin = callingOrigin
-        )
-
-        constructor(
-            request: JwsCompactTyped<AuthenticationRequestParameters>,
-            credentialIds: List<String>,
-            callingPackageName: String,
-            callingOrigin: String,
-        ) : this(
-            request = request.jws.toString(),
+            request = OpenId4VpRequest.JwsCompact(JosefJwsCompact((request as JarRequestParameters).request!!).typed<AuthenticationRequestParameters, JosefJwsCompact>()),
             credentialIds = credentialIds,
             callingPackageName = callingPackageName,
             callingOrigin = callingOrigin
@@ -124,12 +142,10 @@ sealed interface DCAPIWalletRequest {
             get() = ExchangeProtocolIdentifier.OpenId4VpV1Signed
     }
 
-
-    @ConsistentCopyVisibility
     @Serializable
-    data class OpenId4VpUnsigned private constructor(
+    data class OpenId4VpUnsigned(
         @SerialName("request")
-        override val request: String,
+        override val request: OpenId4VpRequest.Json,
         @SerialName("credentialIds")
         override val credentialIds: Collection<String>,
         @SerialName("callingPackageName")
@@ -138,21 +154,19 @@ sealed interface DCAPIWalletRequest {
         override val callingOrigin: String,
     ) : DCAPIWalletRequest, OpenId4Vp() {
 
-        constructor(
-            request: AuthenticationRequestParameters,
-            credentialIds: List<String>,
-            callingPackageName: String,
-            callingOrigin: String,
-        ) : this(
-            request = joseCompliantSerializer.encodeToString(request),
-            credentialIds = credentialIds,
-            callingPackageName = callingPackageName,
-            callingOrigin = callingOrigin
-        )
-
         override val protocol: ExchangeProtocolIdentifier
             get() = ExchangeProtocolIdentifier.OpenId4VpV1Unsigned
 
     }
 
 }
+
+@Deprecated("Will move into Signum in the next release", level = DeprecationLevel.WARNING)
+class JwsTypedSerializerTemplate<J : JWS, P>(
+    jwsSerializer: KSerializer<J>,
+    private val payloadSerializer: KSerializer<P>,
+) : TransformingSerializerTemplate<JwsTyped<J, P>, J>(
+    parent = jwsSerializer,
+    encodeAs = { it.jws },
+    decodeAs = { jws -> JwsTyped(jws, jws.getPayload(payloadSerializer).getOrThrow()) }
+)

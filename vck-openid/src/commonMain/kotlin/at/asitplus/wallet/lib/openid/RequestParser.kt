@@ -10,11 +10,8 @@ import at.asitplus.openid.OpenIdConstants
 import at.asitplus.openid.RequestObjectParameters
 import at.asitplus.openid.RequestParameters
 import at.asitplus.openid.RequestParametersFrom
-import at.asitplus.signum.indispensable.josef.io.joseCompliantSerializer
-import at.asitplus.signum.indispensable.josef.JwsCompact
 import at.asitplus.signum.indispensable.josef.JwsCompactTyped
-import at.asitplus.signum.indispensable.josef.JwsGeneral
-import at.asitplus.signum.indispensable.josef.typed
+import at.asitplus.signum.indispensable.josef.io.joseCompliantSerializer
 import at.asitplus.wallet.lib.RemoteResourceRetrieverFunction
 import at.asitplus.wallet.lib.RemoteResourceRetrieverInput
 import at.asitplus.wallet.lib.data.MediaTypes
@@ -97,28 +94,26 @@ class RequestParser(
     private fun DCAPIWalletRequest.OpenId4Vp.parseAsDcApiRequest(): RequestParametersFrom<AuthenticationRequestParameters>? =
         catchingUnwrapped {
             when (this) {
-                is DCAPIWalletRequest.OpenId4VpSigned ->
-                    JwsCompact.parse<AuthenticationRequestParameters>(request).getOrThrow().let { (jwt, param) ->
-                        RequestParametersFrom.DcApiSigned(this, param, jwt, false)
-                    }
+                is DCAPIWalletRequest.OpenId4VpSigned -> RequestParametersFrom.DcApiSigned(
+                    this,
+                    this.request.request.payload,
+                    this.request.request.jws,
+                    false
+                )
 
                 is DCAPIWalletRequest.OpenId4VpUnsigned ->
                     RequestParametersFrom.DcApiUnsigned(
                         this,
-                        joseCompliantSerializer.decodeFromString<AuthenticationRequestParameters>(request),
-                        request
+                        this.request.request,
+                        joseCompliantSerializer.encodeToString(this.request.request)
                     )
 
-                is DCAPIWalletRequest.OpenId4VpMultiSigned ->
-                    joseCompliantSerializer.decodeFromString<JwsGeneral>(request)
-                        .typed<AuthenticationRequestParameters, JwsGeneral>().let { (jws, payload) ->
-                            RequestParametersFrom.DcApiMultiSigned(
-                                this,
-                                payload,
-                                jws,
-                                false
-                            )
-                        }
+                is DCAPIWalletRequest.OpenId4VpMultiSigned -> RequestParametersFrom.DcApiMultiSigned(
+                    this,
+                    this.request.request.payload,
+                    this.request.request.jws,
+                    false
+                )
             }
         }.getOrNull()
 
