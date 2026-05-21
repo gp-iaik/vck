@@ -87,19 +87,23 @@ internal class AuthorizationRequestValidator(
 
     @Throws(OAuth2Exception::class)
     private fun RequestParametersFrom<AuthenticationRequestParameters>.verifyClientIdSchemeX509() {
-        val clientIdScheme = parameters.clientIdSchemeExtracted
-        val responseModeIsDirectPost = parameters.responseMode.isAnyDirectPost()
-        val responseModeIsDcApi = parameters.responseMode.isAnyDcApi()
-        if (this !is RequestParametersFrom.RequestParametersSigned<AuthenticationRequestParameters>
-            || (jws as JwsCompact).jwsHeader.certificateChain.isNullOrEmpty()
-        ) {
-            throw InvalidRequest("x5c is null, and metadata is not set")
-        }
+        val signedRequest = this as? RequestParametersFrom.RequestParametersSigned<AuthenticationRequestParameters>
+            ?: throw InvalidRequest("x509 client_id_scheme requires a signed request object")
 
-        val leaf = (jws as JwsCompact).jwsHeader.certificateChain!!.leaf
-        when (clientIdScheme) {
-            ClientIdScheme.X509SanDns -> verifyX509SanDns(leaf, responseModeIsDirectPost, responseModeIsDcApi)
-            ClientIdScheme.X509Hash -> verifyX509SanHash(leaf)
+        val leaf = (signedRequest.jws as? JwsCompact)
+            ?.jwsHeader
+            ?.certificateChain
+            ?.takeIf { it.isNotEmpty() }
+            ?.leaf
+            ?: throw InvalidRequest("x509 client_id_scheme requires an x5c certificate chain in the JOSE header")
+
+        when (val clientIdScheme = parameters.clientIdSchemeExtracted) {
+            ClientIdScheme.X509SanDns -> signedRequest.verifyX509SanDns(
+                leaf = leaf,
+                responseModeIsDirectPost = parameters.responseMode.isAnyDirectPost(),
+                responseModeIsDcApi = parameters.responseMode.isAnyDcApi(),
+            )
+            ClientIdScheme.X509Hash -> signedRequest.verifyX509SanHash(leaf)
             // checked before calling this method
             else -> throw InvalidRequest("Unexpected clientIdScheme $clientIdScheme")
         }
