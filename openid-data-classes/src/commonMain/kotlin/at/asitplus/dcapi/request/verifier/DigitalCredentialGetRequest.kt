@@ -25,9 +25,8 @@ sealed class DigitalCredentialGetRequest {
         override val protocol: ExchangeProtocolIdentifier
             get() = ExchangeProtocolIdentifier.IsoMdocAnnexC
 
-        @Transient
         @Deprecated("Renamed", replaceWith = ReplaceWith("data"))
-        val request: IsoMdocRequest = data
+        val request: IsoMdocRequest get() = data
     }
 
     sealed interface OpenId4Vp {
@@ -54,10 +53,8 @@ sealed class DigitalCredentialGetRequest {
         override val protocol: ExchangeProtocolIdentifier
             get() = ExchangeProtocolIdentifier.OpenId4VpV1Signed
 
-
-        @Transient
         @Deprecated("Renamed", replaceWith = ReplaceWith("data"))
-        val request: OpenId4Vp.SignedDataElement = data
+        val request: OpenId4Vp.SignedDataElement get() = data
     }
 
     @Serializable
@@ -79,9 +76,8 @@ sealed class DigitalCredentialGetRequest {
         override val protocol: ExchangeProtocolIdentifier
             get() = ExchangeProtocolIdentifier.OpenId4VpV1Unsigned
 
-        @Transient
         @Deprecated("Renamed", replaceWith = ReplaceWith("data"))
-        val request: AuthenticationRequestParameters = data
+        val request: AuthenticationRequestParameters get() = data
 
     }
 
