@@ -138,13 +138,13 @@ data class RequestOptionsCredential(
         optional: Boolean,
     ) =
         ConstraintField(
-            path = listOf(toIsoMdocClaimPath(scheme).toNormalizedJsonPath().toString()),
+            path = listOf(toIsoMdocClaimPath(scheme).toJsonPath()),
             intentToRetain = false,
             optional = optional
         )
 
     private fun DCQLClaimsPathPointer.toJwtConstraintField(optional: Boolean): ConstraintField =
-        ConstraintField(path = listOf(toNormalizedJsonPath().toString()), optional = optional)
+        ConstraintField(path = listOf(toJsonPath()), optional = optional)
 
     private fun DCQLClaimsPathPointer.toNormalizedJsonPath(): NormalizedJsonPath =
         NormalizedJsonPath(segments.map {
@@ -155,6 +155,31 @@ data class RequestOptionsCredential(
                     throw IllegalArgumentException("Presentation Exchange constraints do not support null path segments")
             }
         })
+
+    private fun DCQLClaimsPathPointer.toJsonPath(): String =
+        buildString {
+            append("$")
+            segments.forEach {
+                when (it) {
+                    is DCQLClaimsPathPointerSegment.NameSegment ->
+                        append(it.name.toJsonPathNameSelector())
+
+                    is DCQLClaimsPathPointerSegment.IndexSegment ->
+                        append("[${it.index}]")
+
+                    DCQLClaimsPathPointerSegment.NullSegment ->
+                        throw IllegalArgumentException("Presentation Exchange constraints do not support null path segments")
+                }
+            }
+        }
+
+    private fun String.toJsonPathNameSelector(): String =
+        if (isJsonPathShorthandName()) ".$this"
+        else NormalizedJsonPath(listOf(NameSegment(this))).toString().removePrefix("$")
+
+    private fun String.isJsonPathShorthandName(): Boolean =
+        firstOrNull()?.let { it == '_' || it in 'A'..'Z' || it in 'a'..'z' } == true &&
+                drop(1).all { it == '_' || it in 'A'..'Z' || it in 'a'..'z' || it in '0'..'9' }
 
     private fun ConstantIndex.CredentialScheme.toVcConstraint() = if (supportsVcJwt)
         ConstraintField(

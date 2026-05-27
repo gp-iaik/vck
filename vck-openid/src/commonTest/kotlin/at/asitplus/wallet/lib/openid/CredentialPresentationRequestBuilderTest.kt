@@ -178,6 +178,26 @@ val CredentialPresentationRequestBuilderTest by testSuite {
             .shouldContain("$['foo.bar']")
     }
 
+    test("presentation exchange mapping uses shorthand paths for ordinary claims") {
+        val presentationRequest = CredentialPresentationRequestBuilder(
+            credentials = setOf(
+                RequestOptionsCredential(
+                    credentialScheme = ConstantIndex.AtomicAttribute2023,
+                    representation = ConstantIndex.CredentialRepresentation.SD_JWT,
+                    attributePaths = setOf(DCQLClaimsPathPointer("given_name")),
+                    id = "cred-1"
+                )
+            ),
+        ).toPresentationExchangeRequest()
+
+        presentationRequest.shouldBeInstanceOf<CredentialPresentationRequest.PresentationExchangeRequest>()
+            .presentationDefinition.inputDescriptors.shouldBeSingleton().first()
+            .shouldBeInstanceOf<DifInputDescriptor>()
+            .constraints.shouldNotBeNull().fields.shouldNotBeNull()
+            .map { it.path.shouldBeSingleton().first() }
+            .shouldContain("$.given_name")
+    }
+
     test("presentation exchange mapping supports nested typed paths") {
         val presentationRequest = CredentialPresentationRequestBuilder(
             credentials = setOf(
@@ -195,7 +215,7 @@ val CredentialPresentationRequestBuilderTest by testSuite {
             .shouldBeInstanceOf<DifInputDescriptor>()
             .constraints.shouldNotBeNull().fields.shouldNotBeNull()
             .map { it.path.shouldBeSingleton().first() }
-            .shouldContain("$['foo']['bar']")
+            .shouldContain("$.foo.bar")
     }
 
     @Suppress("DEPRECATION")
@@ -216,7 +236,7 @@ val CredentialPresentationRequestBuilderTest by testSuite {
             .shouldBeInstanceOf<DifInputDescriptor>()
             .constraints.shouldNotBeNull().fields.shouldNotBeNull()
             .map { it.path.shouldBeSingleton().first() }
-            .shouldContain("$['foo']['bar']")
+            .shouldContain("$.foo.bar")
     }
 
 
@@ -286,6 +306,6 @@ val CredentialPresentationRequestBuilderTest by testSuite {
             .shouldBeInstanceOf<DifInputDescriptor>()
             .constraints.shouldNotBeNull().fields.shouldNotBeNull()
             .map { it.path.shouldBeSingleton().first() }
-            .shouldContain("$['custom.namespace']['custom_claim']")
+            .shouldContain("$['custom.namespace'].custom_claim")
     }
 }
