@@ -10,10 +10,10 @@ data class Rfc3986UriPathNoScheme(
         }
         string.indexOf(':').takeIf {
             it != -1
-        }?.let {
-            // if there is a colon, it must not be in the first segment
-            // in particular, there must be at least 2 segments and therefore at least 1 `/`
-            require(string.indexOf('/') > it) {
+        }?.let { colonIdx ->
+            // if there is a colon, it must not be in the first segment — a slash must exist and precede the colon
+            val slashIdx = string.indexOf('/')
+            require(slashIdx != -1 && slashIdx < colonIdx) {
                 "Expected first segment to not contain a colon, `$string`."
             }
         }

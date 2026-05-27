@@ -3,6 +3,7 @@ package at.asitplus.rfc3986uri
 import at.asitplus.testballoon.withData
 import de.infix.testBalloon.framework.core.testSuite
 import io.kotest.assertions.throwables.shouldNotThrowAny
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.shouldBe
 import io.ktor.http.Url
 import io.ktor.http.authority
@@ -167,6 +168,21 @@ val Rfc3986UniformResourceIdentifierTest by testSuite {
         test("non-empty path does not equal empty path") {
             val nonEmpty = Rfc3986UniformResourceIdentifier("http://example.com/a")
             (nonEmpty.path == Rfc3986UriPathEmpty) shouldBe false
+        }
+    }
+
+    testSuite("path-noscheme colon rules") {
+        test("colon after first segment is accepted") {
+            shouldNotThrowAny { Rfc3986UriPathNoScheme("a/b:c") }
+            shouldNotThrowAny { Rfc3986UriPathNoScheme("a/b/c:d") }
+        }
+        test("colon in first segment is rejected") {
+            shouldThrow<IllegalArgumentException> {
+                Rfc3986UriPathNoScheme("a:b")
+            }
+            shouldThrow<IllegalArgumentException> {
+                Rfc3986UriPathNoScheme("a:b/c")
+            }
         }
     }
 
