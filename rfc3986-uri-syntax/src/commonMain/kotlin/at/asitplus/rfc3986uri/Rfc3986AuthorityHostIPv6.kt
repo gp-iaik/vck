@@ -100,47 +100,40 @@ data class Rfc3986AuthorityHostIPv6(
             }
         }
 
-        val firstParts = when (parts.size) {
-            2 -> parts.first().map {
-                it.toHexPart()
+        return when (parts.size) {
+            1 -> {
+                // No `::` — every group must be explicit; zero-padding is not allowed
+                parts[0].map { it.toHexPart() }
             }
 
-            1 -> listOf()
+            2 -> {
+                val firstParts = parts[0].map { it.toHexPart() }
+                val afterDoubleColon = parts[1]
+                val middleParts = afterDoubleColon.dropLast(1).map { it.toHexPart() }
+                val lastParts = afterDoubleColon.lastOrNull()?.let {
+                    if (it.contains(".")) {
+                        val ipv4 = Rfc3986AuthorityHostIPv4(it)
+                        ipv4.parts.chunked(2).map { (first, second) ->
+                            (first.toUInt().shl(8) + second).toUShort()
+                        }
+                    } else {
+                        listOf(it.toHexPart())
+                    }
+                } ?: listOf()
+
+                val missingParts = PARTS_TOTAL - firstParts.size - middleParts.size - lastParts.size
+                listOf(
+                    firstParts,
+                    List(missingParts) { 0.toUShort() },
+                    middleParts,
+                    lastParts,
+                ).flatten()
+            }
+
             else -> throw IllegalArgumentException(
                 """Expected IPv6 address to consist of at most 1 `::`-separator, but got ${parts.size - 1} in `$string`."""
             )
         }
-
-        val afterDoubleColon = parts.last()
-        val middleParts = afterDoubleColon.dropLast(1).map {
-            it.toHexPart()
-        }
-
-        val lastParts = afterDoubleColon.lastOrNull()?.let {
-            if (it.contains(".")) {
-                val ipv4 = Rfc3986AuthorityHostIPv4(it)
-                ipv4.parts.chunked(2).map { (first, second) ->
-                    (first.toUInt().shl(8) + second).toUShort()
-                }
-            } else {
-                listOf(
-                    it.toHexPart()
-                )
-            }
-        } ?: listOf()
-
-        val missingParts = PARTS_TOTAL - firstParts.size - middleParts.size - lastParts.size
-
-        val reconstructedParts = listOf(
-            firstParts,
-            List(missingParts) {
-                0.toUShort()
-            },
-            middleParts,
-            lastParts,
-        ).flatten()
-
-        return reconstructedParts
     }
 
     private fun String.toHexPart(): UShort {

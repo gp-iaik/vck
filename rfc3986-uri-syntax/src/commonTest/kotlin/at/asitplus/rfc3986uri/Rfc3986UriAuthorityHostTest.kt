@@ -11,7 +11,7 @@ val Rfc3986AuthorityHostTest by testSuite {
     testSuite("case insensitivity") {
         withData(
             mapOf(
-                "v6 simple" to Pair("aaAA", "aAaA"),
+                "v6 simple" to Pair("aaAA::", "aAaA::"),
             )
         ) {
             Rfc3986AuthorityHost("[${it.first}]") shouldBe Rfc3986AuthorityHost("[${it.second}]")
@@ -53,6 +53,23 @@ val Rfc3986AuthorityHostTest by testSuite {
         test("leading zero in multi-digit octet is rejected") {
             shouldThrow<IllegalArgumentException> { Rfc3986AuthorityHostIPv4("01.2.3.4") }
             shouldThrow<IllegalArgumentException> { Rfc3986AuthorityHostIPv4("192.00.2.1") }
+        }
+    }
+
+    testSuite("IPv6 group count without compression") {
+        test("full 8-group address is accepted") {
+            shouldNotThrowAny { Rfc3986AuthorityHostIPv6("2001:db8:85a3:0:0:8a2e:370:7334") }
+            shouldNotThrowAny { Rfc3986UniformResourceIdentifier("http://[2001:db8:85a3:0:0:8a2e:370:7334]/") }
+        }
+        test("fewer than 8 groups without :: is rejected") {
+            shouldThrow<IllegalArgumentException> { Rfc3986AuthorityHostIPv6("1:2:3") }
+            shouldThrow<IllegalArgumentException> { Rfc3986UniformResourceIdentifier("http://[1:2:3]/") }
+        }
+        test(":: forms with fewer groups are still accepted") {
+            shouldNotThrowAny { Rfc3986AuthorityHostIPv6("::1") }
+            shouldNotThrowAny { Rfc3986AuthorityHostIPv6("1::") }
+            shouldNotThrowAny { Rfc3986AuthorityHostIPv6("::") }
+            shouldNotThrowAny { Rfc3986AuthorityHostIPv6("2001:db8::1") }
         }
     }
 
