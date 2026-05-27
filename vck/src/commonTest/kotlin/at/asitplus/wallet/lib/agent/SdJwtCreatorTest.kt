@@ -11,6 +11,7 @@ import at.asitplus.wallet.lib.jws.SdJwtSigned
 import at.asitplus.wallet.lib.jws.SignJwt
 import com.benasher44.uuid.uuid4
 import de.infix.testBalloon.framework.core.testSuite
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.collections.shouldBeSingleton
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.nulls.shouldNotBeNull
@@ -52,11 +53,12 @@ val SdJwtCreatorTest by testSuite {
         }
     }
 
-    "nbf, cnf, vct, status MUST be included in SD-JWT, i.e. can not be selectively disclosed" {
-        listOfClaims("nbf", "cnf", "vct", "status").toSdJsonObject(RandomSource.Default).apply {
+    "nbf, exp, cnf, vct, status MUST be included in SD-JWT, i.e. can not be selectively disclosed" {
+        listOfClaims("nbf", "exp", "cnf", "vct", "status").toSdJsonObject(RandomSource.Default).apply {
             second.shouldHaveSize(0)
             first["_sd"] shouldBe null
             first["nbf"] shouldNotBe null
+            first["exp"] shouldNotBe null
             first["cnf"] shouldNotBe null
             first["vct"] shouldNotBe null
             first["status"] shouldNotBe null
@@ -199,6 +201,46 @@ val SdJwtCreatorTest by testSuite {
                 }
             }
         }
+    }
+
+    "mixing ClaimToBeIssued and ClaimToBeIssuedArrayElement in one collection throws" {
+        shouldThrow<IllegalArgumentException> {
+            listOf(
+                ClaimToBeIssued(
+                    "mixed", listOf(
+                        ClaimToBeIssued("a", "1"),
+                        ClaimToBeIssuedArrayElement("2")
+                    )
+                )
+            ).toSdJsonObject()
+        }
+    }
+
+    "empty claims list produces valid SD-JWT with only _sd_alg and no _sd array" {
+        emptyList<ClaimToBeIssued>().toSdJsonObject(RandomSource.Default).apply {
+            second.shouldHaveSize(0)
+            first["_sd"] shouldBe null
+            first["_sd_alg"] shouldBe SdJwtConstants.SHA_256.toJsonElement()
+        }
+    }
+
+    "SD-JWT with flat dot-key claim survives serialize/parse round-trip" {
+        val (sdJsonObject, disclosures) = listOf(
+            ClaimToBeIssued("foo.bar", "value", true)
+        ).toSdJsonObject(RandomSource.Default)
+
+        val jws = SignJwt<JsonObject>(EphemeralKeyWithoutCert(), JwsHeaderNone())(
+            JwsContentTypeConstants.SD_JWT,
+            payload = sdJsonObject,
+            serializer = JsonObject.serializer()
+        ).getOrThrow()
+
+        val serialized = SdJwtSigned.issued(jws, disclosures.toList()).serialize()
+        val parsed = SdJwtSigned.parseCatching(serialized).getOrThrow()
+        val reconstructed = SdJwtDecoded(parsed).reconstructedJsonObject.shouldNotBeNull()
+
+        reconstructed["foo"] shouldBe null
+        reconstructed["foo.bar"].shouldBeInstanceOf<JsonPrimitive>().content shouldBe "value"
     }
 
 }

@@ -57,6 +57,9 @@ object SdJwtCreator {
                     require(recursiveClaims.size + arrayClaims.size == claim.value.size) {
                         "All elements of a recursive claim must be either ClaimToBeIssued or ClaimToBeIssuedArrayElement"
                     }
+                    require(recursiveClaims.isEmpty() || arrayClaims.isEmpty()) {
+                        "Recursive claims must not mix ClaimToBeIssued and ClaimToBeIssuedArrayElement"
+                    }
                     val mapped = if (recursiveClaims.isNotEmpty())
                         recursiveClaims.toIntSdJsonObject(randomSource, digest)
                     else

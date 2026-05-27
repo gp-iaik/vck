@@ -47,3 +47,6 @@ metrics/
 
 ### macOS ###
 .DS_Store
+
+.codex
+.nvmrc
