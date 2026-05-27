@@ -131,7 +131,13 @@ value class SdJwtTypeMetadataClaimInformationPath(
             return when {
                 jsonElement.isString -> SdJwtTypeMetadataClaimInformationPathNameSegment(jsonElement.content)
                 jsonElement == JsonNull -> null
-                else -> SdJwtTypeMetadataClaimInformationPathIndexSegment(jsonElement.long.toULong())
+                else -> {
+                    val long = jsonElement.long
+                    require(long >= 0) {
+                        "Expected content to be a string, `null` or a non-negative integer, but was: $jsonElement"
+                    }
+                    SdJwtTypeMetadataClaimInformationPathIndexSegment(long.toULong())
+                }
             }
         }
     }

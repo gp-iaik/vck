@@ -2,6 +2,7 @@ package at.asitplus.wallet.sdjwt
 
 import at.asitplus.jsonpath.core.NormalizedJsonPath
 import de.infix.testBalloon.framework.core.testSuite
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.shouldBe
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -71,6 +72,15 @@ val SdJwtTypeMetadataClaimInformationPathTest by testSuite {
             (NormalizedJsonPath() + "degrees" + 1u + "type") to JsonPrimitive("Master of Science"),
         ).map {
             it.first.toString() to it.second
+        }
+    }
+
+    test("negative numeric path segments are rejected at parse time") {
+        shouldThrow<IllegalArgumentException> {
+            Json.decodeFromString<SdJwtTypeMetadataClaimInformationPath>("""["degrees", -1]""")
+        }
+        shouldThrow<IllegalArgumentException> {
+            Json.decodeFromString<SdJwtTypeMetadataClaimInformationPath>("""[-1]""")
         }
     }
 }
