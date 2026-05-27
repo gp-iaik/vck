@@ -13,7 +13,7 @@ value class SvgContentPlaceholder(
             "Expected placeholder to start with a letter or `_`, but got: $string"
         }
         string.forEachIndexed { index, it ->
-            require(it in 'a'..'z' || it in 'A'..'Z' || it == '_') {
+            require(it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' || it == '_') {
                 "Expected placeholder to consist of alphanumeric characters and underscores, but got character `$it` at index $index: $string"
             }
         }
