@@ -29,9 +29,7 @@ object SdJwtCreator {
      * (in the array with key `_sd`), and the plain values for
      * other claims that are not selectively disclosable (see [ClaimToBeIssued.selectivelyDisclosable]).
      *
-     * Supports creating nested structures in two ways:
-     *  - The [ClaimToBeIssued] contains a collection of other [ClaimToBeIssued] in [ClaimToBeIssued.value]
-     *  - The [ClaimToBeIssued.name] contains dots (`.`) to nest structures, e.g. `address.region`
+     * To create nested structures, pass a collection of [ClaimToBeIssued] in [ClaimToBeIssued.value].
      *
      * @return The encoded JSON object and the disclosure strings
      */
@@ -76,23 +74,6 @@ object SdJwtCreator {
                         }
                     }
                 }
-                val dotNotationDigests: Collection<String> = dotNotation.groupByDots().mapNotNull { (key, claims) ->
-                    claims.toIntSdJsonObject(randomSource, digest).let {
-                        disclosures.addAll(it.second)
-                        put(key, it.first)
-                        key.toSdItem(it.first, randomSource).toDisclosure()
-                            .also { disclosures.add(it) }
-                            .hashDisclosure(digest)
-                    }
-                }
-                val dotNotationPlainDigests: Collection<String> =
-                    dotNotationPlain.groupByDots().mapNotNull { (key, claims) ->
-                        claims.toIntSdJsonObject(randomSource, digest).let {
-                            disclosures.addAll(it.second)
-                            put(key, it.first)
-                            null
-                        }
-                    }
                 val simpleDigests: Collection<String> = simpleValues.mapNotNull { claim ->
                     if (claim.selectivelyDisclosable) {
                         claim.toSdItem(randomSource).toDisclosure()
@@ -103,7 +84,7 @@ object SdJwtCreator {
                         null
                     }
                 }
-                (recursiveDigests + dotNotationDigests + dotNotationPlainDigests + simpleDigests).let { digests ->
+                (recursiveDigests + simpleDigests).let { digests ->
                     if (digests.isNotEmpty()) {
                         putJsonArray(NAME_SD) { addAll(digests) }
                     }
@@ -133,38 +114,10 @@ object SdJwtCreator {
     }
 
     /**
-     * Groups by the object name (the part before the first `.`),
-     * with the list of values containing the original values, but the name stripped,
-     * i.e. the part before the first `.` removed.
-     *
-     * Example:
-     * ```
-     * {
-     *   "address.region": "Vienna",
-     *   "address.country": "AT"
-     * }
-     * ```
-     * turns into
-     * ```
-     * {
-     *   "address": {
-     *     "region": "Vienna",
-     *     "country": "AT"
-     *   }
-     * }
-     */
-    private fun Collection<ClaimToBeIssued>.groupByDots(): Map<String, List<ClaimToBeIssued>> = groupBy(
-        { it.name.split(".").first() },
-        { it.copy(name = it.name.split(".").drop(1).joinToString()) }
-    ).toMap()
-
-    /**
-     * Holds all the claims to be issued split up into four categories, for easy use in [toIntSdJsonObject]
+     * Holds all the claims to be issued split up into two categories, for easy use in [toIntSdJsonObject]
      */
     data class Partitioned(
         val recursive: Collection<ClaimToBeIssued>,
-        val dotNotation: Collection<ClaimToBeIssued>,
-        val dotNotationPlain: Collection<ClaimToBeIssued>,
         val simpleValues: Collection<ClaimToBeIssued>,
     )
 
@@ -186,33 +139,18 @@ object SdJwtCreator {
      */
     private fun Collection<ClaimToBeIssued>.honorNotDisclosableClaims(): Collection<ClaimToBeIssued> =
         this.map {
-            if (it.name in notDisclosableClaims) {
-                it.copy(it.name, it.value, false)
-            } else if (it.name.contains(".") && it.name.split(":").first() in notDisclosableClaims) {
-                it.copy(it.name, it.value, false)
-            } else {
-                it
-            }
+            if (it.name in notDisclosableClaims) it.copy(it.name, it.value, false) else it
         }.filterNot { it.name in disallowedNames }
 
     /**
-     * Partitions the claims to be issued into four categories, for easy use in [toIntSdJsonObject]
+     * Partitions the claims to be issued into two categories, for easy use in [toIntSdJsonObject]
      */
     private fun Collection<ClaimToBeIssued>.customPartition(): Partitioned {
-        val isDotNotation: (ClaimToBeIssued) -> Boolean = { it.name.contains('.') }
-        val isDisclosable: (ClaimToBeIssued) -> Boolean = { it.selectivelyDisclosable }
-        val hasNestedElements: (ClaimToBeIssued) -> Boolean = {
+        val (recursiveClaims, simpleValueClaims) = partition {
             it.value is Collection<*> &&
                     (it.value.first() is ClaimToBeIssued || it.value.first() is ClaimToBeIssuedArrayElement)
         }
-        val (recursiveClaims, simpleValueClaims) = partition(hasNestedElements)
-        val dotNotationClaims = simpleValueClaims.filter(isDotNotation)
-        return Partitioned(
-            recursive = recursiveClaims,
-            dotNotation = dotNotationClaims.filter(isDisclosable),
-            dotNotationPlain = dotNotationClaims.filterNot(isDisclosable),
-            simpleValues = simpleValueClaims.filterNot(isDotNotation)
-        )
+        return Partitioned(recursive = recursiveClaims, simpleValues = simpleValueClaims)
     }
 
     private fun String.toSdItem(

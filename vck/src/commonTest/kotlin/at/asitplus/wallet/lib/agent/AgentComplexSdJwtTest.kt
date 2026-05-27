@@ -166,16 +166,15 @@ val AgentComplexSdJwtTest by testSuite {
                 }
         }
 
-        test("with claims in address in dot-notation") {
+        test("claim name with dot is stored flat, NOT nested") {
+            val dotClaimName = "$CLAIM_ADDRESS.$CLAIM_ADDRESS_REGION"
             listOf(
-                ClaimToBeIssued("$CLAIM_ADDRESS.$CLAIM_ADDRESS_REGION", "Vienna"),
-                ClaimToBeIssued("$CLAIM_ADDRESS.$CLAIM_ADDRESS_COUNTRY", "AT"),
+                ClaimToBeIssued(dotClaimName, "Vienna"),
                 nonsenseClaim()
             ).apply { issueAndStoreCredential(it.holder, it.issuer, this, it.holderKeyMaterial) }
 
             val presentationRequest = PresentationExchangeRequest.forAttributeNames(
-                "$.$CLAIM_ADDRESS.$CLAIM_ADDRESS_REGION",
-                "$.$CLAIM_ADDRESS.$CLAIM_ADDRESS_COUNTRY"
+                "\$['$dotClaimName']"
             )
 
             val vp = it.holder.createDefaultPresentation(
@@ -187,11 +186,9 @@ val AgentComplexSdJwtTest by testSuite {
 
             it.verifier.verifyPresentationSdJwt(vp.sdJwt, it.challenge).getOrThrow()
                 .shouldBeInstanceOf<Verifier.VerifyPresentationResult.SuccessSdJwt>().apply {
-                    disclosures.size shouldBe 2 // for region, country
-                    reconstructedJsonObject[CLAIM_ADDRESS]?.jsonObject?.get(CLAIM_ADDRESS_REGION)
-                        ?.jsonPrimitive?.content shouldBe "Vienna"
-                    reconstructedJsonObject[CLAIM_ADDRESS]?.jsonObject?.get(CLAIM_ADDRESS_COUNTRY)
-                        ?.jsonPrimitive?.content shouldBe "AT"
+                    disclosures.size shouldBe 1
+                    reconstructedJsonObject[CLAIM_ADDRESS] shouldBe null
+                    reconstructedJsonObject[dotClaimName]?.jsonPrimitive?.content shouldBe "Vienna"
                 }
         }
 

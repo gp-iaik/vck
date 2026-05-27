@@ -170,20 +170,15 @@ val AgentComplexSdJwtDcqlTest by testSuite {
                 }
         }
 
-        test("with claims in address in dot-notation") {
+        test("claim name with dot is stored flat, NOT nested") {
+            val dotClaimName = "$CLAIM_ADDRESS.$CLAIM_ADDRESS_REGION"
             listOf(
-                ClaimToBeIssued("$CLAIM_ADDRESS.$CLAIM_ADDRESS_REGION", "Vienna"),
-                ClaimToBeIssued("$CLAIM_ADDRESS.$CLAIM_ADDRESS_COUNTRY", "AT"),
+                ClaimToBeIssued(dotClaimName, "Vienna"),
                 nonsenseClaim()
             ).apply { issueAndStoreCredential(it.holder, it.issuer, this, it.holderKeyMaterial) }
 
             val dcqlQuery = buildDCQLQuery(
-                DCQLJsonClaimsQuery(
-                    path = DCQLClaimsPathPointer(CLAIM_ADDRESS) + CLAIM_ADDRESS_REGION,
-                ),
-                DCQLJsonClaimsQuery(
-                    path = DCQLClaimsPathPointer(CLAIM_ADDRESS) + CLAIM_ADDRESS_COUNTRY,
-                ),
+                DCQLJsonClaimsQuery(path = DCQLClaimsPathPointer(dotClaimName)),
             )
 
             val vp = createPresentation(it.holder, it.challenge, dcqlQuery, it.verifierId)
@@ -191,11 +186,9 @@ val AgentComplexSdJwtDcqlTest by testSuite {
 
             it.verifier.verifyPresentationSdJwt(vp.sdJwt, it.challenge).getOrThrow()
                 .shouldBeInstanceOf<Verifier.VerifyPresentationResult.SuccessSdJwt>().apply {
-                    disclosures.size shouldBe 2 // for region, country
-                    reconstructedJsonObject[CLAIM_ADDRESS]?.jsonObject?.get(CLAIM_ADDRESS_REGION)
-                        ?.jsonPrimitive?.content shouldBe "Vienna"
-                    reconstructedJsonObject[CLAIM_ADDRESS]?.jsonObject?.get(CLAIM_ADDRESS_COUNTRY)
-                        ?.jsonPrimitive?.content shouldBe "AT"
+                    disclosures.size shouldBe 1
+                    reconstructedJsonObject[CLAIM_ADDRESS] shouldBe null
+                    reconstructedJsonObject[dotClaimName]?.jsonPrimitive?.content shouldBe "Vienna"
                 }
         }
 

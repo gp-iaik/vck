@@ -35,30 +35,14 @@ data class RequestOptionsCredential(
      * List of attributes that shall be requested explicitly (selective disclosure),
      * or `null` to make no restrictions.
      *
-     * **By convention, strings containing a `.` are assumed to request nested claims**
-     *
-     * Use the claim names `name` and `address.formatted` to request all claims within this credential:
-     * ````
-     *   "name": "Mustermann",
-     *   "address": {
-     *      "formatted": "Herrengasse 1"
-     *   }
-     * ```
+     * Use `address.formatted` to request the `formatted` claim nested inside `address`.
      */
     val requestedAttributes: RequestedAttributes? = null,
     /**
      * List of attributes that shall be requested explicitly (selective disclosure),
      * but are not required (i.e. marked as optional), or `null` to make no restrictions.
      *
-     * **By convention, strings containing a `.` are assumed to request nested claims**
-     *
-     * Use the claim names `name` and `address.formatted` to request all claims within this credential:
-     * ````
-     *   "name": "Mustermann",
-     *   "address": {
-     *      "formatted": "Herrengasse 1"
-     *   }
-     * ```
+     * Use `address.formatted` to request the `formatted` claim nested inside `address`.
      */
     val requestedOptionalAttributes: RequestedAttributes? = null,
     /** ID to be used in [DifInputDescriptor], or [DCQLCredentialQuery] */

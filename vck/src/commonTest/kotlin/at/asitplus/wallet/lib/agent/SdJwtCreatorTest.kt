@@ -167,6 +167,18 @@ val SdJwtCreatorTest by testSuite {
         }
     }
 
+    "claim name containing a dot is NOT nested - stored flat with literal dot key" {
+        listOf(ClaimToBeIssued("foo.bar", "value", true)).toSdJsonObject(RandomSource.Default).apply {
+            second.shouldHaveSize(1)
+            first["_sd"]!!.jsonArray shouldHaveSize 1
+            first["foo"] shouldBe null
+            signDecodeReconstruct().apply {
+                this["foo"] shouldBe null
+                this["foo.bar"].shouldBeInstanceOf<JsonPrimitive>().content shouldBe "value"
+            }
+        }
+    }
+
     test("array selectively disclosable, and elements within too") {
         listOf(
             ClaimToBeIssued(
