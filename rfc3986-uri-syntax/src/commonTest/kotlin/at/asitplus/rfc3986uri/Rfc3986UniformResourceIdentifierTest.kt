@@ -152,4 +152,25 @@ val Rfc3986UniformResourceIdentifierTest by testSuite {
             }
         }
     }
+
+    testSuite("string round-trips") {
+        withData(
+            "https://www.ietf.org/archive/id/draft-ietf-oauth-sd-jwt-vc-16.html#claim-metadata",
+            "https://user:password@www.ietf.org:8080?name=draft#claim-metadata",
+            "https://user:password@127.0.0.1:8080?name=draft#claim-metadata",
+            "https://user:password@[aaAA::]:8080?name=draft#claim-metadata",
+            "http://a/b/c/d;p?q",
+            "http://www.ics.uci.edu/pub/ietf/uri/#Related",
+            "http://www.w3.org/Addressing/",
+            "ftp://foo.example.com/rfc/",
+            "ftp://ftp.is.co.za/rfc/rfc1808.txt",
+            "http://www.ietf.org/rfc/rfc2396.txt",
+            "ldap://[2001:db8::7]/c=GB?objectClass?one",
+            "mailto:John.Doe@example.com",
+            "telnet://192.0.2.16:80/",
+            "urn:oasis:names:specification:docbook:dtd:xml:4.1.2",
+        ) { uri ->
+            Rfc3986UniformResourceIdentifier(uri).string shouldBe uri
+        }
+    }
 }

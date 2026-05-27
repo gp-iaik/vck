@@ -51,7 +51,7 @@ class KtorSdJwtTypeMetadataDocumentRetriever(
             dynamicCache.remove(sdJwtVcType)
         }
 
-        val response = httpClient.get(uri.string)
+        val response = httpClient.get(sdJwtVcType.string)
         if (response.status == HttpStatusCode.OK) {
             val rawBytes = response.body<ByteArray>()
             val definition = json.decodeFromString(SdJwtTypeMetadataDefinition.serializer(), rawBytes.decodeToString())

@@ -30,7 +30,7 @@ data class Rfc3986RelativeReference(
 
     val string: String by lazy {
         listOfNotNull(
-            authority?.toString(true),
+            authority?.let { "//${it.toString(true)}" },
             path.toString(),
             query?.let { "?$it" },
             fragment?.let { "#$it" },
