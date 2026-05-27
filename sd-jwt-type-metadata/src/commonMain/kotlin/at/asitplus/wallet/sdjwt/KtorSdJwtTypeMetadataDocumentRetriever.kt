@@ -37,12 +37,13 @@ class KtorSdJwtTypeMetadataDocumentRetriever(
             return null
         }
 
-        staticCache[sdJwtVcType]?.let { (integrity, document) ->
-            // TODO: when/how to invalidate static cache? Relying on client-provided integrity changes for now
-            if(integrityMetadata == null || integrityMetadata == integrity) {
-                return document
+        if (integrityMetadata != null) {
+            staticCache[sdJwtVcType]?.let { (integrity, document) ->
+                if (integrityMetadata == integrity) {
+                    return document
+                }
+                staticCache.remove(sdJwtVcType)
             }
-            staticCache.remove(sdJwtVcType)
         }
         dynamicCache[sdJwtVcType]?.let { (validUntil, document) ->
             if (clock.now() < validUntil) {
