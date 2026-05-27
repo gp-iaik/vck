@@ -21,6 +21,7 @@ class KtorSdJwtTypeMetadataDocumentRetriever(
     val httpClient: HttpClient,
     val clock: Clock,
     val json: Json = Json.Default,
+    val integrityChecker: SdJwtTypeMetadataDocumentIntegrityChecker = SdJwtTypeMetadataDocumentIntegrityChecker.DEFAULT,
 ) : SdJwtTypeMetadataDocumentRetriever {
     private val staticCache = mutableMapOf<SdJwtVcType, Pair<W3cSubresourceIntegrityMetadata, SdJwtTypeMetadataDocument>>()
     private val dynamicCache = mutableMapOf<SdJwtVcType, Pair<Instant, SdJwtTypeMetadataDocument>>()
@@ -59,7 +60,8 @@ class KtorSdJwtTypeMetadataDocumentRetriever(
             val definition = json.decodeFromString(SdJwtTypeMetadataDefinition.serializer(), rawBytes.decodeToString())
             val document = SdJwtTypeMetadataDocument(originalBytes = rawBytes, definition = definition)
             if (integrityMetadata != null) {
-                // we assume the integrity metadata to be validated by the caller
+                if (document.definition.vct != sdJwtVcType) return null
+                integrityChecker.checkIntegrity(document, integrityMetadata)
                 staticCache[sdJwtVcType] = integrityMetadata to document
             } else {
                 addToCache(

@@ -26,9 +26,9 @@ data class SdJwtTypeMetadataClaimInformation(
     @SerialName(SerialNames.DISPLAY)
     val display: SdJwtTypeMetadataClaimInformationDisplayMetadataList? = null,
     @SerialName(SerialNames.MANDATORY)
-    val isMandatory: Boolean = false,
+    val isMandatory: Boolean? = null,
     @SerialName(SerialNames.SD)
-    val selectiveDisclosureConstraints: SelectiveDisclosureConstraints = SelectiveDisclosureConstraints.allowed,
+    val selectiveDisclosureConstraints: SelectiveDisclosureConstraints? = null,
     @SerialName(SerialNames.SVG_ID)
     val svgId: SvgContentPlaceholder? = null,
 ) {
@@ -51,17 +51,20 @@ data class SdJwtTypeMetadataClaimInformation(
         return SdJwtTypeMetadataClaimInformation(
             path = base.path,
             display = child.display ?: base.display,
-            isMandatory = child.extendFromMandatory(isBaseMandatory = base.isMandatory),
-            selectiveDisclosureConstraints = child.selectiveDisclosureConstraints.extendFrom(base.selectiveDisclosureConstraints),
+            isMandatory = if (child.isMandatory != null) child.extendFromMandatory(base.isMandatory) else base.isMandatory,
+            selectiveDisclosureConstraints = if (child.selectiveDisclosureConstraints != null)
+                child.selectiveDisclosureConstraints.extendFrom(base.selectiveDisclosureConstraints ?: SelectiveDisclosureConstraints.allowed)
+            else
+                base.selectiveDisclosureConstraints,
             svgId = child.svgId ?: base.svgId,
         )
     }
 
-    private fun extendFromMandatory(isBaseMandatory: Boolean): Boolean {
+    private fun extendFromMandatory(isBaseMandatory: Boolean?): Boolean {
         return when (isBaseMandatory) {
-            false -> this.isMandatory
+            null, false -> this.isMandatory!!
             true -> {
-                require(this.isMandatory) {
+                require(this.isMandatory!!) {
                     "An extending type can set the mandatory property of a claim that is optional in the extended type to true, but it MUST NOT change a claim that is mandatory in the extended type to false."
                 }
                 true

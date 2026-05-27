@@ -57,7 +57,7 @@ val SdJwtTypeMetadataTest by testSuite {
 
             val addressClaim = claims.first { it.path == SdJwtTypeMetadataClaimInformationPath("address") }
             addressClaim.selectiveDisclosureConstraints shouldBe SelectiveDisclosureConstraints.always
-            addressClaim.isMandatory shouldBe false
+            addressClaim.isMandatory shouldBe null
             addressClaim.svgId shouldBe null
             addressClaim.display!!.first { it.locale == Rfc5646LanguageTag("en-US") }.label shouldBe "Address"
             addressClaim.display!!.first { it.locale == Rfc5646LanguageTag("de-DE") }.description shouldBe "Adresse zum Zeitpunkt des Abschlusses"
@@ -70,14 +70,14 @@ val SdJwtTypeMetadataTest by testSuite {
 
             val degreesClaim = claims.first { it.path == SdJwtTypeMetadataClaimInformationPath("degrees") }
             degreesClaim.selectiveDisclosureConstraints shouldBe SelectiveDisclosureConstraints.never
-            degreesClaim.isMandatory shouldBe false
+            degreesClaim.isMandatory shouldBe null
             degreesClaim.display!!.first { it.locale == Rfc5646LanguageTag("en-US") }.label shouldBe "Degrees"
             degreesClaim.display!!.first { it.locale == Rfc5646LanguageTag("de-DE") }.description shouldBe "Abschlüsse des/der Studierenden"
 
             val degreesWildcardPath = SdJwtTypeMetadataClaimInformationPath("degrees") + null
             val degreesWildcardClaim = claims.first { it.path == degreesWildcardPath }
             degreesWildcardClaim.selectiveDisclosureConstraints shouldBe SelectiveDisclosureConstraints.always
-            degreesWildcardClaim.isMandatory shouldBe false
+            degreesWildcardClaim.isMandatory shouldBe null
             degreesWildcardClaim.display shouldBe null
 
             val fieldOfStudyClaim = claims.first { it.path == degreesWildcardPath + "field_of_study" }

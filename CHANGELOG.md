@@ -5,6 +5,11 @@ Release 6.0.0 (unreleased):
  - Deprecations:
    - Remove code deprecated in 5.12.0, e.g. `CredentialSubject` as base class for JWT VC
    - Deprecate `vckJsonSerializer`, should be replaced with `joseCompliantSerializer` (Signum)
+ - Add: SD-JWT VC Type Metadata ([draft-ietf-oauth-sd-jwt-vc-16](https://datatracker.ietf.org/doc/draft-ietf-oauth-sd-jwt-vc/):
+   - `SdJwtTypeMetadataDocument`: stores and verifies raw document bytes for W3C SRI integrity checks (integrity is computed over the original response bytes, not re-serialized JSON)
+   - `KtorSdJwtTypeMetadataDocumentRetriever`: HTTP retrieval with two-tier caching (static/indefinite for integrity-pinned documents; Cache-Control–based TTL otherwise); integrity-pinned lookups bypass the dynamic cache and vice versa; integrity and `vct` are validated before a fetched document enters the static cache
+   - `DelegatingSdJwtTypeMetadataDocumentResolver`: resolves full inheritance chains, merging display and claim metadata from all ancestors
+ - Add [RFC 3986 URI Syntax](https://datatracker.ietf.org/doc/html/rfc3986) as module
 
 Release 5.12.0:
  - W3C JWT VC:

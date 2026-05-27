@@ -62,7 +62,7 @@ val SdJwtTypeMetadataDocumentTest by testSuite {
 
             val addressClaim = claims.first { it.path == SdJwtTypeMetadataClaimInformationPath("address") }
             addressClaim.selectiveDisclosureConstraints shouldBe SelectiveDisclosureConstraints.always
-            addressClaim.isMandatory shouldBe false
+            addressClaim.isMandatory shouldBe null
             addressClaim.svgId shouldBe null
             addressClaim.display!!.first { it.locale == Rfc5646LanguageTag("en-US") }.label shouldBe "Address"
             addressClaim.display!!.first { it.locale == Rfc5646LanguageTag("de-DE") }.description shouldBe "Adresse zum Zeitpunkt des Abschlusses"
@@ -79,7 +79,7 @@ val SdJwtTypeMetadataDocumentTest by testSuite {
             val degreesWildcardPath = SdJwtTypeMetadataClaimInformationPath("degrees") + null
             val degreesWildcardClaim = claims.first { it.path == degreesWildcardPath }
             degreesWildcardClaim.selectiveDisclosureConstraints shouldBe SelectiveDisclosureConstraints.always
-            degreesWildcardClaim.isMandatory shouldBe false
+            degreesWildcardClaim.isMandatory shouldBe null
             degreesWildcardClaim.display shouldBe null
 
             val fieldOfStudyClaim = claims.first { it.path == degreesWildcardPath + "field_of_study" }
