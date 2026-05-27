@@ -7,7 +7,7 @@ data class DelegatingSdJwtTypeMetadataDocumentIntegrityChecker(
         document: SdJwtTypeMetadataDocument,
         integrityHash: W3cSubresourceIntegrityMetadata,
     ) = subresourceIntegrityChecker.checkIntegrity(
-        data = document.original.toString().encodeToByteArray(),
+        data = document.originalBytes,
         integrityHash = integrityHash,
     )
 }

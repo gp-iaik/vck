@@ -27,7 +27,7 @@ val SdJwtTypeMetadataDocumentResolverTest by testSuite {
             """.trimIndent()
         )
         val baseTypeIntegrity = SignumW3cSubresourceIntegrityMetadataBuilder.build(
-            baseType.original.toString().encodeToByteArray(),
+            baseType.originalBytes,
         )
         val extendingType = Json.decodeFromString(
             SdJwtTypeMetadataDocument.serializer(),
@@ -98,7 +98,7 @@ val SdJwtTypeMetadataDocumentResolverTest by testSuite {
                     SdJwtTypeMetadataDocument.serializer(),
                     it
                 )
-            }.original.toString() shouldBe it
+            }.originalBytes.decodeToString() shouldBe it
         }
     }
 }

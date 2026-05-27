@@ -9,6 +9,7 @@ import io.ktor.client.utils.CacheControl
 import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import kotlinx.serialization.json.Json
 import kotlin.time.Clock
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
@@ -19,6 +20,7 @@ import kotlin.time.Instant
 class KtorSdJwtTypeMetadataDocumentRetriever(
     val httpClient: HttpClient,
     val clock: Clock,
+    val json: Json = Json.Default,
 ) : SdJwtTypeMetadataDocumentRetriever {
     private val staticCache = mutableMapOf<SdJwtVcType, Pair<W3cSubresourceIntegrityMetadata, SdJwtTypeMetadataDocument>>()
     private val dynamicCache = mutableMapOf<SdJwtVcType, Pair<Instant, SdJwtTypeMetadataDocument>>()
@@ -51,7 +53,9 @@ class KtorSdJwtTypeMetadataDocumentRetriever(
 
         val response = httpClient.get(uri.string)
         if (response.status == HttpStatusCode.OK) {
-            val document = response.body<SdJwtTypeMetadataDocument>()
+            val rawBytes = response.body<ByteArray>()
+            val definition = json.decodeFromString(SdJwtTypeMetadataDefinition.serializer(), rawBytes.decodeToString())
+            val document = SdJwtTypeMetadataDocument(originalBytes = rawBytes, definition = definition)
             if (integrityMetadata != null) {
                 // we assume the integrity metadata to be validated by the caller
                 staticCache[sdJwtVcType] = integrityMetadata to document
