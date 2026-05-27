@@ -86,7 +86,7 @@ class KtorSdJwtTypeMetadataDocumentRetriever(
         headers: Headers,
     ): Boolean {
         val cacheControlDirectives = headers[HttpHeaders.CacheControl]?.split(",")?.map {
-            it.trim()
+            it.trim().lowercase()
         } ?: return false
 
         /**
