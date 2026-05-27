@@ -9,7 +9,7 @@ sealed interface Rfc3986AuthorityHost {
             return if(string.startsWith("[")) {
                 val trimmed = string.trimStart('[').trimEnd(']')
                 if(trimmed.startsWith("v")) {
-                    Rfc3986AuthorityHostIPvFuture(string)
+                    Rfc3986AuthorityHostIPvFuture(trimmed)
                 } else {
                     Rfc3986AuthorityHostIPv6(trimmed)
                 }

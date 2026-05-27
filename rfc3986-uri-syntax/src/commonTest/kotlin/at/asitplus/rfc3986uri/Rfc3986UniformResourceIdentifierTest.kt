@@ -153,6 +153,23 @@ val Rfc3986UniformResourceIdentifierTest by testSuite {
         }
     }
 
+    testSuite("path equality") {
+        test("equal paths compare equal") {
+            val a = Rfc3986UniformResourceIdentifier("http://example.com/a/b")
+            val b = Rfc3986UniformResourceIdentifier("http://example.com/a/b")
+            a.path shouldBe b.path
+        }
+        test("different paths compare unequal") {
+            val a = Rfc3986UniformResourceIdentifier("http://example.com/a")
+            val b = Rfc3986UniformResourceIdentifier("http://example.com/b")
+            (a.path == b.path) shouldBe false
+        }
+        test("non-empty path does not equal empty path") {
+            val nonEmpty = Rfc3986UniformResourceIdentifier("http://example.com/a")
+            (nonEmpty.path == Rfc3986UriPathEmpty) shouldBe false
+        }
+    }
+
     testSuite("string round-trips") {
         withData(
             "https://www.ietf.org/archive/id/draft-ietf-oauth-sd-jwt-vc-16.html#claim-metadata",

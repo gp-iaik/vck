@@ -23,10 +23,21 @@ val Rfc3986AuthorityHostTest by testSuite {
             "[aaAA::]",
             "127.0.0.1",
             "v1.a",
+            "[v1.a]",
+            "[vff.test:data]",
         ) {it ->
             shouldNotThrowAny {
                 Rfc3986AuthorityHost(it)
             }
+        }
+    }
+
+    testSuite("IPvFuture round-trips through URI") {
+        withData(
+            "http://[v1.foo]/path",
+            "http://[vff.test:data]/",
+        ) { uri ->
+            Rfc3986UniformResourceIdentifier(uri).string shouldBe uri
         }
     }
 }

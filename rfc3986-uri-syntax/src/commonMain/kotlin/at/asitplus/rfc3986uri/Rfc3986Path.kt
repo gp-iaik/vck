@@ -16,7 +16,7 @@ sealed interface Rfc3986Path {
 
         if (other !is Rfc3986Path) return false
 
-        if (Rfc3986UriPathEmpty.toString() != other.toString()) return false
+        if (toString() != other.toString()) return false
 
         return true
     }
