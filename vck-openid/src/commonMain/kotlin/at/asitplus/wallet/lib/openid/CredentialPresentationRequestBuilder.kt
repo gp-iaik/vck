@@ -14,7 +14,7 @@ import at.asitplus.iso.ItemsRequest
 import at.asitplus.iso.ItemsRequestList
 import at.asitplus.iso.SingleItemsRequest
 import at.asitplus.openid.dcql.DCQLClaimsPathPointer
-import at.asitplus.openid.dcql.DCQLClaimsPathPointerSegment
+import at.asitplus.openid.dcql.DCQLClaimsPathPointerSegment.NameSegment
 import at.asitplus.openid.dcql.DCQLClaimsQueryList
 import at.asitplus.openid.dcql.DCQLCredentialQuery
 import at.asitplus.openid.dcql.DCQLCredentialQueryIdentifier
@@ -33,6 +33,7 @@ import at.asitplus.wallet.lib.RequestOptionsCredential
 import at.asitplus.wallet.lib.data.ConstantIndex
 import at.asitplus.wallet.lib.data.ConstantIndex.CredentialRepresentation
 import at.asitplus.wallet.lib.data.CredentialPresentationRequest
+import at.asitplus.wallet.lib.toIsoMdocClaimPath
 import com.benasher44.uuid.uuid4
 
 /**
@@ -90,12 +91,16 @@ data class CredentialPresentationRequestBuilder(
         if (it.representation != CredentialRepresentation.ISO_MDOC) {
             throw UnsupportedOperationException("Wrong representation: Only ISO MDoc is supported")
         }
-        val namespace = it.credentialScheme.isoNamespace ?: throw IllegalStateException("Missing namespace")
         val docType = it.credentialScheme.isoDocType ?: throw IllegalStateException("Missing doc type")
-        val itemsRequestsListEntries = it.requestedAttributes?.map { reqAttr ->
-            SingleItemsRequest(reqAttr, false)
-        } ?: listOf()
-        val itemsRequestList = mapOf(namespace to ItemsRequestList(itemsRequestsListEntries))
+        val itemsRequestList = it.effectiveRequestedAttributePaths().map { reqAttr ->
+            val (namespace, claimName) = reqAttr.toIsoMdocClaimPath(it.credentialScheme).toIsoMdocNamespaceAndClaimName()
+            namespace to SingleItemsRequest(claimName, false)
+        }.groupBy(
+            keySelector = { (namespace, _) -> namespace },
+            valueTransform = { (_, itemRequest) -> itemRequest }
+        ).mapValues { (_, itemRequests) ->
+            ItemsRequestList(itemRequests)
+        }
         DocRequest(ByteStringWrapper(ItemsRequest(docType, itemsRequestList)))
     }.toTypedArray().let {
         DeviceRequest("1.0", it)
@@ -117,8 +122,8 @@ data class CredentialPresentationRequestBuilder(
             ),
             claims = nonOptionalAndOptionalRequestedAttributes()
                 .takeIf { it.isNotEmpty() } // requesting all claims if none are specified
-                ?.map { (attribute, _) ->
-                    DCQLJsonClaimsQuery(path = attribute.splitByDotToDcqlPath())
+                ?.map { (attributePath, _) ->
+                    DCQLJsonClaimsQuery(path = attributePath)
                 }?.toNonEmptyList()
                 ?.let { DCQLClaimsQueryList(it) }
         )
@@ -132,8 +137,8 @@ data class CredentialPresentationRequestBuilder(
             ),
             claims = nonOptionalAndOptionalRequestedAttributes()
                 .takeIf { it.isNotEmpty() } // requesting all claims if none are specified
-                ?.map { (attribute, _) ->
-                    DCQLJsonClaimsQuery(path = attribute.splitByDotToDcqlPath())
+                ?.map { (attributePath, _) ->
+                    DCQLJsonClaimsQuery(path = attributePath)
                 }?.toNonEmptyList()
                 ?.let { DCQLClaimsQueryList(it) }
         )
@@ -147,9 +152,9 @@ data class CredentialPresentationRequestBuilder(
             ),
             claims = nonOptionalAndOptionalRequestedAttributes()
                 .takeIf { it.isNotEmpty() } // requesting all claims if none are specified
-                ?.map { (attribute, _) ->
+                ?.map { (attributePath, _) ->
                     DCQLIsoMdocClaimsQuery(
-                        path = DCQLClaimsPathPointer(credentialScheme.isoNamespace!!, attribute)
+                        path = attributePath.toIsoMdocClaimPath(credentialScheme)
                     )
                 }?.toNonEmptyList()
                 ?.let { DCQLClaimsQueryList(it) }
@@ -157,11 +162,14 @@ data class CredentialPresentationRequestBuilder(
     }
 
     // TODO: how to properly handle non-required claims?
-    private fun RequestOptionsCredential.nonOptionalAndOptionalRequestedAttributes(): List<Pair<String, Boolean>> =
-        (requestedAttributes?.map { it to true } ?: listOf()) +
-                (requestedOptionalAttributes?.map { it to false } ?: listOf())
+    private fun RequestOptionsCredential.nonOptionalAndOptionalRequestedAttributes(): List<Pair<DCQLClaimsPathPointer, Boolean>> =
+        effectiveRequestedAttributePaths().map { it to true } +
+                effectiveRequestedOptionalAttributePaths().map { it to false }
 
-    private fun String.splitByDotToDcqlPath() = DCQLClaimsPathPointer(
-        split(".").map { DCQLClaimsPathPointerSegment.NameSegment(it) }.toNonEmptyList()
-    )
+    private fun DCQLClaimsPathPointer.toIsoMdocNamespaceAndClaimName(): Pair<String, String> {
+        require(segments.size == 2 && segments.all { it is NameSegment }) {
+            "ISO mdoc requested attribute paths must contain namespace and claim name segments"
+        }
+        return (segments[0] as NameSegment).name to (segments[1] as NameSegment).name
+    }
 }
