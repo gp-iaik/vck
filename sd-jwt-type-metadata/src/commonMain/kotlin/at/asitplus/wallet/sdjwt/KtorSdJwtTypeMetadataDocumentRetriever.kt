@@ -64,6 +64,7 @@ class KtorSdJwtTypeMetadataDocumentRetriever(
                 integrityChecker.checkIntegrity(document, integrityMetadata)
                 staticCache[sdJwtVcType] = integrityMetadata to document
             } else {
+                if (document.definition.vct != sdJwtVcType) return null
                 addToCache(
                     document = document,
                     sdJwtVcType = sdJwtVcType,
