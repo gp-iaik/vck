@@ -49,8 +49,8 @@ data class Rfc3986AuthorityHostIPv4(
                     "Expected IPv4 address parts to consist of parts written in decimals (0-9), but got `${ch}` at index $index in `$string`."
                 }
             }
-            require(!it.startsWith('0')) {
-                "Expected IPv4 address parts to not start with `0`, but got ${it} at part $index in `$string`."
+            require(it.length == 1 || !it.startsWith('0')) {
+                "Expected IPv4 address parts to not have leading zeroes, but got ${it} at part $index in `$string`."
             }
         }
     }.map {

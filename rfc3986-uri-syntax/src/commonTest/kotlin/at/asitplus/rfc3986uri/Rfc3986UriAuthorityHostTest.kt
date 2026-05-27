@@ -3,6 +3,7 @@ package at.asitplus.rfc3986uri
 import at.asitplus.testballoon.withData
 import de.infix.testBalloon.framework.core.testSuite
 import io.kotest.assertions.throwables.shouldNotThrowAny
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.shouldBe
 
 @Suppress("unused")
@@ -29,6 +30,19 @@ val Rfc3986AuthorityHostTest by testSuite {
             shouldNotThrowAny {
                 Rfc3986AuthorityHost(it)
             }
+        }
+    }
+
+    testSuite("IPv4 octet zero") {
+        test("single zero octet is valid") {
+            shouldNotThrowAny { Rfc3986AuthorityHostIPv4("0.0.0.0") }
+            shouldNotThrowAny { Rfc3986AuthorityHostIPv4("192.0.2.0") }
+            shouldNotThrowAny { Rfc3986UniformResourceIdentifier("http://0.0.0.0/") }
+            shouldNotThrowAny { Rfc3986UniformResourceIdentifier("http://192.0.2.128/") }
+        }
+        test("leading zero in multi-digit octet is rejected") {
+            shouldThrow<IllegalArgumentException> { Rfc3986AuthorityHostIPv4("01.2.3.4") }
+            shouldThrow<IllegalArgumentException> { Rfc3986AuthorityHostIPv4("192.00.2.1") }
         }
     }
 
