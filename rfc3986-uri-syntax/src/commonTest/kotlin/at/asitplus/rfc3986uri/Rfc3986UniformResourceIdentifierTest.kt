@@ -171,6 +171,29 @@ val Rfc3986UniformResourceIdentifierTest by testSuite {
         }
     }
 
+    testSuite("empty port is accepted") {
+        test("URI with trailing colon parses without error") {
+            shouldNotThrowAny { Rfc3986UniformResourceIdentifier("http://example.com:") }
+        }
+        test("empty port is treated as absent") {
+            val uri = Rfc3986UniformResourceIdentifier("http://example.com:")
+            uri.authority?.port shouldBe null
+            uri.authority?.host shouldBe Rfc3986AuthorityHost("example.com")
+        }
+    }
+
+    testSuite("root-only absolute path") {
+        test("path-absolute may be just a slash") {
+            shouldNotThrowAny { Rfc3986UriPathAbsolute("/") }
+        }
+        test("URI with root-only path parses without error") {
+            shouldNotThrowAny { Rfc3986UniformResourceIdentifier("foo:/") }
+        }
+        test("double-slash path-absolute is still rejected") {
+            shouldThrow<IllegalArgumentException> { Rfc3986UriPathAbsolute("//") }
+        }
+    }
+
     testSuite("path-noscheme colon rules") {
         test("colon after first segment is accepted") {
             shouldNotThrowAny { Rfc3986UriPathNoScheme("a/b:c") }

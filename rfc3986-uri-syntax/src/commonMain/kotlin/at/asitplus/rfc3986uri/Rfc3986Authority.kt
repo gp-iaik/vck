@@ -34,7 +34,8 @@ data class Rfc3986Authority(
                     )
                 ),
                 port = portSeparatorIndex?.let {
-                    string.substring(portSeparatorIndex + 1).toULong()
+                    val portString = string.substring(portSeparatorIndex + 1)
+                    if (portString.isEmpty()) null else portString.toULong()
                 }
             )
         }

@@ -9,8 +9,8 @@ data class Rfc3986UriPathAbsolute(
         require(string.startsWith("/")) {
             "Expected path to start with `/`, but got `$string`."
         }
-        require(string.length >= 2 && string[1] != '/') {
-            "Expected path to start with a non-empty segment after root, but got `$string`."
+        require(string.length < 2 || string[1] != '/') {
+            "Expected path to not start with `//` (would be ambiguous with authority), but got `$string`."
         }
     }
 
