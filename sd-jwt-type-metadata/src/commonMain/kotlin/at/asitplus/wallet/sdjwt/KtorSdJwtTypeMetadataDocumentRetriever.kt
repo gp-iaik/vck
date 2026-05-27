@@ -44,12 +44,13 @@ class KtorSdJwtTypeMetadataDocumentRetriever(
                 }
                 staticCache.remove(sdJwtVcType)
             }
-        }
-        dynamicCache[sdJwtVcType]?.let { (validUntil, document) ->
-            if (clock.now() < validUntil) {
-                return document
+        } else {
+            dynamicCache[sdJwtVcType]?.let { (validUntil, document) ->
+                if (clock.now() < validUntil) {
+                    return document
+                }
+                dynamicCache.remove(sdJwtVcType)
             }
-            dynamicCache.remove(sdJwtVcType)
         }
 
         val response = httpClient.get(sdJwtVcType.string)
