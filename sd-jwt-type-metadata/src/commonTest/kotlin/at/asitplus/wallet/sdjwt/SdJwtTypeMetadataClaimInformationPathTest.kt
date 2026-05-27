@@ -83,4 +83,11 @@ val SdJwtTypeMetadataClaimInformationPathTest by testSuite {
             Json.decodeFromString<SdJwtTypeMetadataClaimInformationPath>("""[-1]""")
         }
     }
+
+    test("path indexes exceeding Int.MAX_VALUE are rejected at parse time") {
+        val tooBig = Int.MAX_VALUE.toLong() + 1L
+        shouldThrow<IllegalArgumentException> {
+            Json.decodeFromString<SdJwtTypeMetadataClaimInformationPath>("""["degrees", $tooBig]""")
+        }
+    }
 }

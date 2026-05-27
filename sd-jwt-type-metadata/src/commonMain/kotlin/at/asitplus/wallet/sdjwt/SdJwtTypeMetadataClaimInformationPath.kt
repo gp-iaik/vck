@@ -41,7 +41,8 @@ value class SdJwtTypeMetadataClaimInformationPath(
             }
 
             is SdJwtTypeMetadataClaimInformationPathIndexSegment -> currentList.mapNotNull { (path, element) ->
-                element.jsonArray.getOrNull(segment.ulong.toInt())?.let {
+                if (segment.ulong > Int.MAX_VALUE.toULong()) null
+                else element.jsonArray.getOrNull(segment.ulong.toInt())?.let {
                     (path + segment.ulong.toUInt()) to it
                 }
             }
@@ -135,6 +136,9 @@ value class SdJwtTypeMetadataClaimInformationPath(
                     val long = jsonElement.long
                     require(long >= 0) {
                         "Expected content to be a string, `null` or a non-negative integer, but was: $jsonElement"
+                    }
+                    require(long <= Int.MAX_VALUE) {
+                        "Expected path index to fit in a Kotlin list index (0..${Int.MAX_VALUE}), but was: $jsonElement"
                     }
                     SdJwtTypeMetadataClaimInformationPathIndexSegment(long.toULong())
                 }
