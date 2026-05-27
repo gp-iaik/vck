@@ -33,6 +33,16 @@ val Rfc3986AuthorityHostTest by testSuite {
         }
     }
 
+    testSuite("IP-literal bracket validation") {
+        test("missing closing bracket is rejected") {
+            shouldThrow<IllegalArgumentException> { Rfc3986AuthorityHost("[::1") }
+            shouldThrow<IllegalArgumentException> { Rfc3986AuthorityHost("[v1.foo") }
+        }
+        test("string without opening bracket is not treated as IP-literal") {
+            shouldNotThrowAny { Rfc3986AuthorityHost("example.com") }
+        }
+    }
+
     testSuite("IPv4 octet zero") {
         test("single zero octet is valid") {
             shouldNotThrowAny { Rfc3986AuthorityHostIPv4("0.0.0.0") }

@@ -7,7 +7,10 @@ sealed interface Rfc3986AuthorityHost {
     companion object {
         operator fun invoke(string: String): Rfc3986AuthorityHost {
             return if(string.startsWith("[")) {
-                val trimmed = string.trimStart('[').trimEnd(']')
+                require(string.endsWith("]")) {
+                    "Expected IP-literal to be enclosed in brackets, but got `$string`."
+                }
+                val trimmed = string.drop(1).dropLast(1)
                 if(trimmed.startsWith("v")) {
                     Rfc3986AuthorityHostIPvFuture(trimmed)
                 } else {
