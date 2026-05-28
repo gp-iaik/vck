@@ -7,6 +7,7 @@ import at.asitplus.openid.RequestParametersFrom
 import at.asitplus.signum.indispensable.josef.JwsCompactTyped
 import at.asitplus.signum.indispensable.josef.JwsTyped
 import at.asitplus.signum.indispensable.josef.io.joseCompliantSerializer
+import at.asitplus.signum.indispensable.josef.toJwsFlattened
 import at.asitplus.testballoon.invoke
 import at.asitplus.testballoon.withFixtureGenerator
 import at.asitplus.wallet.lib.oidvci.encodeToParameters
@@ -191,6 +192,28 @@ val OpenIdRequestParserTests by testSuite {
                 shouldBeInstanceOf<RequestParametersFrom<AuthenticationRequestParameters>>()
                 shouldBeInstanceOf<RequestParametersFrom.DcApiUnsigned<*>>()
                 //jsonString shouldBe authnRequestSerialized // TODO Don't know why this is not the same
+                parameters.assertParams()
+
+                joseCompliantSerializer.decodeFromString<RequestParametersFrom<AuthenticationRequestParameters>>(
+                    joseCompliantSerializer.encodeToString<RequestParametersFrom<AuthenticationRequestParameters>>(this)
+                ).shouldBe(this)
+            }
+        }
+
+        "multisigned request from DCAPI" { requestParser ->
+            val compactTyped = JwsCompactTyped<AuthenticationRequestParameters>(jws)
+            val input = DCAPIWalletRequest.OpenId4VpMultiSigned(
+                request = OpenId4VpRequest.JwsGeneral(
+                    JwsTyped(listOf(compactTyped.jws.toJwsFlattened()))
+                ),
+                credentialIds = listOf("1"),
+                callingPackageName = "com.example.app",
+                callingOrigin = "https://example.com"
+            )
+
+            requestParser.parseRequestParameters(input).getOrThrow().apply {
+                shouldBeInstanceOf<RequestParametersFrom<AuthenticationRequestParameters>>()
+                shouldBeInstanceOf<RequestParametersFrom.DcApiMultiSigned<*>>()
                 parameters.assertParams()
 
                 joseCompliantSerializer.decodeFromString<RequestParametersFrom<AuthenticationRequestParameters>>(

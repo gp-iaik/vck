@@ -1,0 +1,153 @@
+package at.asitplus.wallet.lib.openid
+
+import at.asitplus.dcapi.OpenId4VpResponseMultiSigned
+import at.asitplus.dcapi.OpenId4VpResponseSigned
+import at.asitplus.dcapi.OpenId4VpResponseUnsigned
+import at.asitplus.dcapi.request.DCAPIWalletRequest
+import at.asitplus.dcapi.request.DCAPIWalletRequest.OpenId4Vp.OpenId4VpRequest
+import at.asitplus.openid.OpenIdConstants
+import at.asitplus.openid.RequestParametersFrom
+import at.asitplus.signum.indispensable.josef.JwsTyped
+import at.asitplus.signum.indispensable.josef.toJwsFlattened
+import at.asitplus.testballoon.withFixtureGenerator
+import at.asitplus.wallet.lib.RequestOptionsCredential
+import at.asitplus.wallet.lib.agent.EphemeralKeyWithoutCert
+import at.asitplus.wallet.lib.agent.Holder
+import at.asitplus.wallet.lib.agent.HolderAgent
+import at.asitplus.wallet.lib.agent.IssuerAgent
+import at.asitplus.wallet.lib.agent.KeyMaterial
+import at.asitplus.wallet.lib.agent.RandomSource
+import at.asitplus.wallet.lib.agent.toStoreCredentialInput
+import at.asitplus.wallet.lib.data.ConstantIndex
+import at.asitplus.wallet.lib.data.ConstantIndex.AtomicAttribute2023
+import at.asitplus.wallet.lib.data.ConstantIndex.CredentialRepresentation.SD_JWT
+import at.asitplus.wallet.lib.data.rfc3986.toUri
+import com.benasher44.uuid.uuid4
+import de.infix.testBalloon.framework.core.testSuite
+import io.kotest.matchers.shouldBe
+import io.kotest.matchers.types.shouldBeInstanceOf
+
+@Suppress("unused")
+val OpenId4VpDcApiProtocolTest by testSuite {
+
+    val callingOrigin = "https://example.com"
+    val callingPackageName = "com.example.app"
+    val credentialId = "credential-1"
+
+    val dcqlRequest = CredentialPresentationRequestBuilder(
+        credentials = setOf(RequestOptionsCredential(AtomicAttribute2023, SD_JWT)),
+    ).toDCQLRequest()
+
+    withFixtureGenerator(suspend {
+        val holderKeyMaterial: KeyMaterial = EphemeralKeyWithoutCert()
+        val holderAgent: Holder = HolderAgent(holderKeyMaterial).also { agent ->
+            agent.storeCredential(
+                IssuerAgent(
+                    identifier = "https://issuer.example.com/".toUri(),
+                    randomSource = RandomSource.Default,
+                ).issueCredential(
+                    DummyCredentialDataProvider.getCredential(
+                        holderKeyMaterial.publicKey,
+                        AtomicAttribute2023,
+                        SD_JWT,
+                    ).getOrThrow()
+                ).getOrThrow().toStoreCredentialInput()
+            )
+        }
+        object {
+            val holderAgent: Holder = holderAgent
+            val holderOid4vp: OpenId4VpHolder = OpenId4VpHolder(
+                keyMaterial = holderKeyMaterial,
+                holder = holderAgent,
+                randomSource = RandomSource.Default,
+            )
+            val clientId: String = "dc-api-rp-${uuid4()}"
+            val verifierOid4vp: OpenId4VpVerifier = OpenId4VpVerifier(
+                keyMaterial = EphemeralKeyWithoutCert(),
+                clientIdScheme = ClientIdScheme.PreRegistered(
+                    clientId = clientId,
+                    redirectUri = "https://example.com/callback",
+                ),
+            )
+        }
+    }) - {
+
+        test("DC API unsigned: parsed as DcApiUnsigned, validates and responds with OpenId4VpResponseUnsigned") { f ->
+            val reqOptions = OpenId4VpRequestOptions(
+                presentationRequest = dcqlRequest,
+                responseMode = OpenIdConstants.ResponseMode.DcApi,
+                expectedOrigins = listOf(callingOrigin),
+                populateClientId = false,
+            )
+            val authnRequest = f.verifierOid4vp.createAuthnRequest(reqOptions)
+
+            val dcApiRequest = DCAPIWalletRequest.OpenId4VpUnsigned(
+                request = OpenId4VpRequest.Unsigned(authnRequest),
+                credentialIds = listOf(credentialId),
+                callingPackageName = callingPackageName,
+                callingOrigin = callingOrigin,
+            )
+
+            val preparationState = f.holderOid4vp.startAuthorizationResponsePreparation(dcApiRequest).getOrThrow()
+            preparationState.request.shouldBeInstanceOf<RequestParametersFrom.DcApiUnsigned<*>>()
+                .dcApiRequest.callingOrigin shouldBe callingOrigin
+
+            val response = f.holderOid4vp.finalizeAuthorizationResponse(preparationState).getOrThrow()
+
+            response.shouldBeInstanceOf<AuthenticationResponseResult.DcApi>()
+                .params.shouldBeInstanceOf<OpenId4VpResponseUnsigned>()
+        }
+
+        test("DC API signed: parsed as DcApiSigned, validates and responds with OpenId4VpResponseSigned") { f ->
+            val reqOptions = OpenId4VpRequestOptions(
+                presentationRequest = dcqlRequest,
+                responseMode = OpenIdConstants.ResponseMode.DcApi,
+                expectedOrigins = listOf(callingOrigin),
+            )
+            val signedRequest = f.verifierOid4vp.createAuthnRequestAsSignedRequestObject(reqOptions).getOrThrow()
+
+            val dcApiRequest = DCAPIWalletRequest.OpenId4VpSigned(
+                request = OpenId4VpRequest.JwsCompact(signedRequest),
+                credentialIds = listOf(credentialId),
+                callingPackageName = callingPackageName,
+                callingOrigin = callingOrigin,
+            )
+
+            val preparationState = f.holderOid4vp.startAuthorizationResponsePreparation(dcApiRequest).getOrThrow()
+            preparationState.request.shouldBeInstanceOf<RequestParametersFrom.DcApiSigned<*>>()
+                .dcApiRequest.callingOrigin shouldBe callingOrigin
+
+            val response = f.holderOid4vp.finalizeAuthorizationResponse(preparationState).getOrThrow()
+
+            response.shouldBeInstanceOf<AuthenticationResponseResult.DcApi>()
+                .params.shouldBeInstanceOf<OpenId4VpResponseSigned>()
+        }
+
+        test("DC API multisigned: parsed as DcApiMultiSigned, validates and responds with OpenId4VpResponseMultiSigned") { f ->
+            val reqOptions = OpenId4VpRequestOptions(
+                presentationRequest = dcqlRequest,
+                responseMode = OpenIdConstants.ResponseMode.DcApi,
+                expectedOrigins = listOf(callingOrigin),
+            )
+            val signedRequest = f.verifierOid4vp.createAuthnRequestAsSignedRequestObject(reqOptions).getOrThrow()
+
+            val dcApiRequest = DCAPIWalletRequest.OpenId4VpMultiSigned(
+                request = OpenId4VpRequest.JwsGeneral(
+                    JwsTyped(listOf(signedRequest.jws.toJwsFlattened()))
+                ),
+                credentialIds = listOf(credentialId),
+                callingPackageName = callingPackageName,
+                callingOrigin = callingOrigin,
+            )
+
+            val preparationState = f.holderOid4vp.startAuthorizationResponsePreparation(dcApiRequest).getOrThrow()
+            preparationState.request.shouldBeInstanceOf<RequestParametersFrom.DcApiMultiSigned<*>>()
+                .dcApiRequest.callingOrigin shouldBe callingOrigin
+
+            val response = f.holderOid4vp.finalizeAuthorizationResponse(preparationState).getOrThrow()
+
+            response.shouldBeInstanceOf<AuthenticationResponseResult.DcApi>()
+                .params.shouldBeInstanceOf<OpenId4VpResponseMultiSigned>()
+        }
+    }
+}
