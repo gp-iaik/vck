@@ -25,6 +25,7 @@ import at.asitplus.wallet.lib.data.rfc3986.toUri
 import com.benasher44.uuid.uuid4
 import de.infix.testBalloon.framework.core.testSuite
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.types.shouldBeInstanceOf
 
 @Suppress("unused")
@@ -148,6 +149,48 @@ val OpenId4VpDcApiProtocolTest by testSuite {
 
             response.shouldBeInstanceOf<AuthenticationResponseResult.DcApi>()
                 .params.shouldBeInstanceOf<OpenId4VpResponseMultiSigned>()
+        }
+
+        test("DC API multisigned: origin mismatch rejects with InvalidRequest when expected_origins is set") { f ->
+            val reqOptions = OpenId4VpRequestOptions(
+                presentationRequest = dcqlRequest,
+                responseMode = OpenIdConstants.ResponseMode.DcApi,
+                expectedOrigins = listOf(callingOrigin),
+            )
+            val signedRequest = f.verifierOid4vp.createAuthnRequestAsSignedRequestObject(reqOptions).getOrThrow()
+
+            val dcApiRequest = DCAPIWalletRequest.OpenId4VpMultiSigned(
+                request = OpenId4VpRequest.JwsGeneral(
+                    JwsTyped(listOf(signedRequest.jws.toJwsFlattened()))
+                ),
+                credentialIds = listOf(credentialId),
+                callingPackageName = callingPackageName,
+                callingOrigin = "https://evil.example.com",  // does not match expectedOrigins
+            )
+
+            val result = f.holderOid4vp.startAuthorizationResponsePreparation(dcApiRequest)
+            result.isFailure shouldBe true
+            result.exceptionOrNull()!!.message!! shouldContain "expected_origins"
+        }
+
+        test("DC API signed: origin mismatch rejects with InvalidRequest when expected_origins is set") { f ->
+            val reqOptions = OpenId4VpRequestOptions(
+                presentationRequest = dcqlRequest,
+                responseMode = OpenIdConstants.ResponseMode.DcApi,
+                expectedOrigins = listOf(callingOrigin),
+            )
+            val signedRequest = f.verifierOid4vp.createAuthnRequestAsSignedRequestObject(reqOptions).getOrThrow()
+
+            val dcApiRequest = DCAPIWalletRequest.OpenId4VpSigned(
+                request = OpenId4VpRequest.JwsCompact(signedRequest),
+                credentialIds = listOf(credentialId),
+                callingPackageName = callingPackageName,
+                callingOrigin = "https://evil.example.com",  // does not match expectedOrigins
+            )
+
+            val result = f.holderOid4vp.startAuthorizationResponsePreparation(dcApiRequest)
+            result.isFailure shouldBe true
+            result.exceptionOrNull()!!.message!! shouldContain "expected_origins"
         }
     }
 }

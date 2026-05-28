@@ -93,6 +93,7 @@ sealed interface DCAPIWalletRequest {
     }
 
     @Serializable
+    @SerialName(ExchangeProtocolIdentifier.OPENID4VP_V1_MULTISIGNED)
     data class OpenId4VpMultiSigned(
         @SerialName("request")
         override val request: OpenId4VpRequest.JwsGeneral,

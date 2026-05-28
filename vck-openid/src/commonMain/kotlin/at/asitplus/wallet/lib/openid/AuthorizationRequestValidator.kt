@@ -59,13 +59,21 @@ internal class AuthorizationRequestValidator(
             is RequestParametersFrom.DcApiSigned<*> -> {
                 if (this.parameters.clientId == null)
                     throw InvalidRequest("client_id must be set for DC API signed request")
-                this.parameters.verifyExpectedOrigin(this.dcApiRequest.callingOrigin)
+                if (this.parameters.expectedOrigins != null &&
+                    !this.parameters.verifyExpectedOrigin(this.dcApiRequest.callingOrigin)
+                ) throw InvalidRequest(
+                    "callingOrigin '${this.dcApiRequest.callingOrigin}' does not match expected_origins"
+                )
             }
 
             is RequestParametersFrom.DcApiMultiSigned<*> -> {
                 if (this.parameters.clientId == null)
                     throw InvalidRequest("client_id must be set for DC API multisigned request")
-                this.parameters.verifyExpectedOrigin(this.dcApiRequest.callingOrigin)
+                if (this.parameters.expectedOrigins != null &&
+                    !this.parameters.verifyExpectedOrigin(this.dcApiRequest.callingOrigin)
+                ) throw InvalidRequest(
+                    "callingOrigin '${this.dcApiRequest.callingOrigin}' does not match expected_origins"
+                )
             }
 
             is RequestParametersFrom.DcApiUnsigned<*> -> {
