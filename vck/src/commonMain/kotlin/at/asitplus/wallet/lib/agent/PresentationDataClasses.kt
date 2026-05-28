@@ -100,12 +100,10 @@ sealed interface PresentationResponseParameters {
     }
 
     companion object {
-        @Suppress("DEPRECATION")
         private fun CreatePresentationResult.toJsonPrimitive() = when (val presentationResult = this) {
             is CreatePresentationResult.VpJws -> JsonPrimitive(presentationResult.serialized)
             is CreatePresentationResult.VcJws -> JsonPrimitive(presentationResult.serialized)
             is CreatePresentationResult.SdJwt -> JsonPrimitive(presentationResult.serialized)
-            is CreatePresentationResult.Signed -> JsonPrimitive(presentationResult.serialized)
             is CreatePresentationResult.DeviceResponse -> JsonPrimitive(
                 coseCompliantSerializer.encodeToByteArray(presentationResult.deviceResponse)
                     .encodeToString(Base64UrlStrict)

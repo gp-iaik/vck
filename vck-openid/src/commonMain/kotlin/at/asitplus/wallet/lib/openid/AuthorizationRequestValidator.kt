@@ -7,6 +7,7 @@ import at.asitplus.openid.OpenIdConstants.ClientIdScheme
 import at.asitplus.openid.RequestParametersFrom
 import at.asitplus.signum.indispensable.io.Base64UrlStrict
 import at.asitplus.signum.indispensable.josef.JwsCompact
+import at.asitplus.signum.indispensable.josef.JwsGeneral
 import at.asitplus.signum.indispensable.pki.X509Certificate
 import at.asitplus.signum.indispensable.pki.leaf
 import at.asitplus.wallet.lib.oidvci.OAuth2Exception
@@ -61,6 +62,12 @@ internal class AuthorizationRequestValidator(
                 this.parameters.verifyExpectedOrigin(this.dcApiRequest.callingOrigin)
             }
 
+            is RequestParametersFrom.DcApiMultiSigned<*> -> {
+                if (this.parameters.clientId == null)
+                    throw InvalidRequest("client_id must be set for DC API multisigned request")
+                this.parameters.verifyExpectedOrigin(this.dcApiRequest.callingOrigin)
+            }
+
             is RequestParametersFrom.DcApiUnsigned<*> -> {
                 if (this.parameters.clientId != null)
                     throw InvalidRequest("client_id not allowed for DC API unsigned request")
@@ -90,9 +97,12 @@ internal class AuthorizationRequestValidator(
         val signedRequest = this as? RequestParametersFrom.RequestParametersSigned<AuthenticationRequestParameters>
             ?: throw InvalidRequest("x509 client_id_scheme requires a signed request object")
 
-        val leaf = (signedRequest.jws as? JwsCompact)
-            ?.jwsHeader
-            ?.certificateChain
+        val certChain = when (val jws = signedRequest.jws) {
+            is JwsCompact -> jws.jwsHeader.certificateChain
+            is JwsGeneral -> jws.signatureElements.firstOrNull()?.jwsHeader?.certificateChain
+            else -> null
+        }
+        val leaf = certChain
             ?.takeIf { it.isNotEmpty() }
             ?.leaf
             ?: throw InvalidRequest("x509 client_id_scheme requires an x5c certificate chain in the JOSE header")

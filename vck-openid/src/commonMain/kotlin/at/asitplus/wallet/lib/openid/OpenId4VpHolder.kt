@@ -423,12 +423,14 @@ class OpenId4VpHolder(
     private fun RequestParametersFrom<AuthenticationRequestParameters>.callingOrigin() = when (this) {
         is RequestParametersFrom.DcApiSigned -> dcApiRequest.callingOrigin
         is RequestParametersFrom.DcApiUnsigned -> dcApiRequest.callingOrigin
+        is RequestParametersFrom.DcApiMultiSigned -> dcApiRequest.callingOrigin
         else -> null
     }
 
     private fun RequestParametersFrom<AuthenticationRequestParameters>.credentialIds() = when (this) {
         is RequestParametersFrom.DcApiSigned -> dcApiRequest.credentialIds
         is RequestParametersFrom.DcApiUnsigned -> dcApiRequest.credentialIds
+        is RequestParametersFrom.DcApiMultiSigned -> dcApiRequest.credentialIds
         else -> null
     }
 
