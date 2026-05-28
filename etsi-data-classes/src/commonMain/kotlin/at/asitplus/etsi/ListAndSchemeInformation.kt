@@ -1,6 +1,6 @@
 package at.asitplus.etsi
 
-import at.asitplus.rfc.Rfc3986UniformResourceIdentifier
+import at.asitplus.rfc3986uri.Rfc3986UniformResourceIdentifier
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlin.time.Instant

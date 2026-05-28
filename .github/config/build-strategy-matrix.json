@@ -17,6 +17,14 @@
       "artifactName": "OpenIdDataClasses"
     },
     {
+      "module": "rfc3986-uri-syntax",
+      "artifactName": "Rfc3986UriSyntax"
+    },
+    {
+      "module": "sd-jwt-type-metadata",
+      "artifactName": "SdJwtTypeMetadata"
+    },
+    {
       "module": "vck",
       "artifactName": "VckKmm"
     },

@@ -1,6 +1,6 @@
 package at.asitplus.etsi
 
-import at.asitplus.rfc.CaseInsensitiveString
+import at.asitplus.rfc3986uri.CaseInsensitiveString
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmInline
 
