@@ -23,17 +23,17 @@ on:
         type: string
 jobs:
   build:
-    runs-on: macos-latest
+    runs-on: macos-26
     env:
       KOTLIN_VERSION_ENV: ${{ inputs.kotlin-version }}
       KOTEST_VERSION_ENV: ${{ inputs.kotest-version }}
       KSP_VERSION_ENV: ${{ inputs.ksp-version }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
         with:
           submodules: recursive
-      - uses: actions/setup-java@v3
+      - uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '21'
@@ -75,7 +75,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
         with:
           submodules: recursive
       - name: Build Dokka HTML
