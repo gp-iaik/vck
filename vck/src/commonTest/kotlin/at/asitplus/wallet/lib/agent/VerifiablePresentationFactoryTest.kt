@@ -11,6 +11,7 @@ import at.asitplus.signum.indispensable.CryptoSignature
 import at.asitplus.signum.indispensable.cosef.CoseAlgorithm
 import at.asitplus.signum.indispensable.cosef.CoseHeader
 import at.asitplus.signum.indispensable.cosef.CoseSigned
+import at.asitplus.signum.indispensable.io.Base64UrlStrict
 import at.asitplus.testballoon.matrix.fixture
 import at.asitplus.testballoon.matrix.matrixSuite
 import at.asitplus.wallet.lib.data.ConstantIndex
@@ -20,17 +21,32 @@ import at.asitplus.wallet.lib.data.ConstantIndex.AtomicAttribute2023.CLAIM_GIVEN
 import at.asitplus.wallet.lib.data.ConstantIndex.AtomicAttribute2023.CLAIM_PORTRAIT
 import at.asitplus.wallet.lib.data.ConstantIndex.CredentialRepresentation.ISO_MDOC
 import at.asitplus.wallet.lib.data.ConstantIndex.CredentialRepresentation.SD_JWT
+import at.asitplus.wallet.lib.data.SelectiveDisclosureItem
+import at.asitplus.wallet.lib.data.SelectiveDisclosureItem.Companion.hashDisclosure
+import at.asitplus.wallet.lib.data.VerifiableCredentialSdJwt
 import at.asitplus.wallet.lib.data.rfc3986.toUri
+import at.asitplus.wallet.lib.jws.JwsContentTypeConstants
+import at.asitplus.wallet.lib.jws.JwsHeaderNone
+import at.asitplus.wallet.lib.jws.SignJwt
 import com.benasher44.uuid.uuid4
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.collections.shouldBeEmpty
+import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.collections.shouldNotContain
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
+import io.matthewnelson.encoding.core.Decoder.Companion.decodeToByteArray
+import io.matthewnelson.encoding.core.Encoder.Companion.encodeToString
+import kotlin.random.Random
 import kotlinx.serialization.builtins.ByteArraySerializer
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 val VerifiablePresentationFactoryTest by matrixSuite {
 
@@ -100,6 +116,44 @@ val VerifiablePresentationFactoryTest by matrixSuite {
                 .disclosedClaimNames().apply {
                     this shouldBe setOfDefaultSdJwtClaims
                 }
+        }
+
+        "sd-jwt createVerifiablePresentation discloses claims of foreign credentials with non-canonical disclosures" {
+            // A foreign issuer may serialize disclosures with whitespace: digests are computed over
+            // the exact bytes (RFC 9901, section 4.2.3), not over a re-serialization of the parsed item
+            val salt = Random.nextBytes(16).encodeToString(Base64UrlStrict)
+            val rawDisclosure = """["$salt", "family_name", "Musterfrau"]"""
+                .encodeToByteArray().encodeToString(Base64UrlStrict)
+            val issuerSignedJws = SignJwt<JsonObject>(EphemeralKeyWithoutCert(), JwsHeaderNone())(
+                JwsContentTypeConstants.SD_JWT,
+                buildJsonObject {
+                    put("vct", "https://example.com/credentials/unknown")
+                    put("_sd", buildJsonArray { add(rawDisclosure.hashDisclosure()) })
+                    put("_sd_alg", "sha-256")
+                },
+                JsonObject.serializer(),
+            ).getOrThrow()
+
+            val credential = SubjectCredentialStore.StoreEntry.SdJwt(
+                vcSerialized = "${issuerSignedJws.jws}~$rawDisclosure~",
+                sdJwt = VerifiableCredentialSdJwt(
+                    verifiableCredentialType = "https://example.com/credentials/unknown",
+                ),
+                disclosures = mapOf(
+                    rawDisclosure to SelectiveDisclosureItem(
+                        salt = salt.decodeToByteArray(Base64UrlStrict),
+                        claimName = "family_name",
+                        claimValue = JsonPrimitive("Musterfrau"),
+                    )
+                ),
+            )
+
+            it.verifiablePresentationFactory.createVerifiablePresentation(
+                request = presentationRequest(),
+                credential = credential,
+                disclosedAttributes = listOf(NormalizedJsonPath() + "family_name"),
+            ).getOrThrow().shouldBeInstanceOf<CreatePresentationResult.SdJwt>()
+                .disclosedClaimNames() shouldContain "family_name"
         }
 
         "sd-jwt createVerifiablePresentation uses disclosedAttributes (dcql all claims)" {
