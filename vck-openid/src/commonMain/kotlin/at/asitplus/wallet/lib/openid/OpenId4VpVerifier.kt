@@ -15,6 +15,7 @@ import at.asitplus.iso.DeviceResponse
 import at.asitplus.iso.OpenId4VpHandover
 import at.asitplus.iso.OpenId4VpHandoverInfo
 import at.asitplus.iso.SessionTranscript
+import at.asitplus.iso.serializeOrigin
 import at.asitplus.iso.sha256
 import at.asitplus.jsonpath.JsonPath
 import at.asitplus.openid.AuthenticationRequestParameters
@@ -766,9 +767,14 @@ class OpenId4VpVerifier @JvmOverloads constructor(
         return when (input.originalResponseParameters) {
             is ResponseParametersFrom.DcApi -> {
                 require(origin != null) { "Missing required parameter: origin" }
+                val serializedOrigin = requireNotNull(origin.serializeOrigin()) {
+                    "Invalid parameter: origin"
+                }
                 createDcApiSessionTranscript(
                     OpenID4VPDCAPIHandoverInfo(
-                        origin = origin,
+                        // Device signatures are bound to the HTML-serialized origin used by OpenID4VP/DCAPI.
+                        // Hashing the raw URL would make `https://example.com/` differ from `https://example.com`.
+                        origin = serializedOrigin,
                         nonce = expectedNonce,
                         jwkThumbprint = if (hasBeenEncrypted) {
                             decryptionKeyMaterial.jsonWebKey.sessionTranscriptThumbprint()

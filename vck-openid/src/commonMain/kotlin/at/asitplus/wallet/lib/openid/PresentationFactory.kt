@@ -10,6 +10,7 @@ import at.asitplus.iso.DeviceNameSpaces
 import at.asitplus.iso.OpenId4VpHandover
 import at.asitplus.iso.OpenId4VpHandoverInfo
 import at.asitplus.iso.SessionTranscript
+import at.asitplus.iso.serializeOrigin
 import at.asitplus.iso.sha256
 import at.asitplus.iso.wrapInCborTag
 import at.asitplus.openid.AuthenticationRequestParameters
@@ -155,12 +156,16 @@ internal class PresentationFactory(
         jsonWebKeys: Collection<JsonWebKey>?,
         responseWillBeEncrypted: Boolean
     ) = if (dcApiRequestCallingOrigin != null) {
+        val serializedOrigin = dcApiRequestCallingOrigin.serializeOrigin()
+            ?: throw IllegalArgumentException("Invalid DC API request origin: $dcApiRequestCallingOrigin")
         SessionTranscript.forDcApi(
             DCAPIHandover(
                 type = DCAPIHandover.TYPE_OPENID4VP,
                 hash = coseCompliantSerializer.encodeToByteArray<OpenID4VPDCAPIHandoverInfo>(
                     OpenID4VPDCAPIHandoverInfo(
-                        origin = dcApiRequestCallingOrigin,
+                        // OpenID4VP DC API handover hashes the HTML-serialized origin, not the raw URL.
+                        // This intentionally strips path details such as a trailing slash before signing.
+                        origin = serializedOrigin,
                         nonce = nonce,
                         jwkThumbprint = if (responseWillBeEncrypted && !jsonWebKeys.isNullOrEmpty()) {
                             jsonWebKeys.firstSessionTranscriptThumbprint()
