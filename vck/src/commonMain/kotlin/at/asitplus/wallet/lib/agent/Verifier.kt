@@ -33,6 +33,7 @@ interface Verifier {
      * [at.asitplus.wallet.lib.data.ConstantIndex.CredentialRepresentation.SD_JWT] from a holder,
      * that shall include the [challenge] (sent by this verifier).
      * @param audience Expected audience in the key binding JWT, defaults to the verifier identifier.
+     * @param expectedAudienceOrigins Expected origins if the key binding JWT audience is an origin.
      */
     suspend fun verifyPresentationSdJwt(
         input: SdJwtSigned,
@@ -40,6 +41,7 @@ interface Verifier {
         transactionData: List<TransactionDataBase64Url>? = null,
         requireCryptographicHolderBinding: Boolean = true,
         audience: String? = null,
+        expectedAudienceOrigins: Collection<String>? = null,
     ): KmmResult<VerifyPresentationResult.SuccessSdJwt>
 
     /**

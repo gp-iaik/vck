@@ -33,12 +33,14 @@ class VerifierAgent @JvmOverloads constructor(
         transactionData: List<TransactionDataBase64Url>?,
         requireCryptographicHolderBinding: Boolean,
         audience: String?,
+        expectedAudienceOrigins: Collection<String>?,
     ): KmmResult<VerifyPresentationResult.SuccessSdJwt> = validatorSdJwt.verifyVpSdJwt(
         input = input,
         challenge = challenge,
         clientId = audience ?: identifier,
         transactionData = transactionData,
         requireCryptographicHolderBinding = requireCryptographicHolderBinding,
+        expectedAudienceOrigins = expectedAudienceOrigins,
     )
 
     override suspend fun verifyPresentationVcJwt(

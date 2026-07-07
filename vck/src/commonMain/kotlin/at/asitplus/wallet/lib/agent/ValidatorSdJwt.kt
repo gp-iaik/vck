@@ -3,6 +3,7 @@ package at.asitplus.wallet.lib.agent
 import at.asitplus.KmmResult
 import at.asitplus.catching
 import at.asitplus.csc.contentEquals
+import at.asitplus.iso.serializeOrigin
 import at.asitplus.iso.sha256
 import at.asitplus.openid.TransactionDataBase64Url
 import at.asitplus.openid.digest
@@ -45,6 +46,7 @@ class ValidatorSdJwt @JvmOverloads constructor(
      *
      * @param challenge Expected challenge in the [KeyBindingJws] inside the [input]
      * @param clientId Identifier of the verifier, to verify audience of key binding JWS
+     * @param expectedAudienceOrigins Expected origins if the key binding JWT audience is an origin.
      */
     suspend fun verifyVpSdJwt(
         input: SdJwtSigned,
@@ -52,6 +54,7 @@ class ValidatorSdJwt @JvmOverloads constructor(
         clientId: String,
         transactionData: List<TransactionDataBase64Url>?,
         requireCryptographicHolderBinding: Boolean = true,
+        expectedAudienceOrigins: Collection<String>? = null,
     ): KmmResult<VerifyPresentationResult.SuccessSdJwt> = catching {
         Napier.d("verifyVpSdJwt: '$input', '$challenge', '$clientId', '$transactionData'")
         val sdJwtResult = verifySdJwt(input, null).getOrThrow()
@@ -76,8 +79,12 @@ class ValidatorSdJwt @JvmOverloads constructor(
             require(keyBinding.challenge == challenge) {
                 "Challenge not correct: ${keyBinding.challenge}"
             }
-            require(keyBinding.audience == clientId) {
-                "Audience not correct: ${keyBinding.audience}"
+            if (expectedAudienceOrigins != null) {
+                keyBinding.audience.verifyExpectedAudienceOrigin(expectedAudienceOrigins)
+            } else {
+                require(keyBinding.audience == clientId) {
+                    "Audience not correct: ${keyBinding.audience}"
+                }
             }
 
             if (!keyBinding.sdHash.contentEquals(input.hashInput.encodeToByteArray().sha256())) {
@@ -102,6 +109,19 @@ class ValidatorSdJwt @JvmOverloads constructor(
             disclosures = sdJwtResult.disclosures.values,
             freshnessSummary = validator.checkCredentialFreshness(sdJwtResult.verifiableCredentialSdJwt),
         )
+    }
+
+    private fun String.verifyExpectedAudienceOrigin(expectedOrigins: Collection<String>) {
+        require(expectedOrigins.isNotEmpty()) {
+            "Expected audience origins must not be empty"
+        }
+        val actualOrigin = removePrefix("origin:").takeIf { it != this }
+            ?: throw IllegalArgumentException("Audience is not an origin: $this")
+        val actualSerialized = actualOrigin.serializeOrigin()
+            ?: throw IllegalArgumentException("Audience origin is not valid: $actualOrigin")
+        require(expectedOrigins.any { it.serializeOrigin() == actualSerialized }) {
+            "Audience origin '$actualSerialized' does not match expected origins"
+        }
     }
 
     /**
