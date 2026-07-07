@@ -47,14 +47,12 @@ sealed class ResponseParametersFrom {
     @ConsistentCopyVisibility
     data class DcApi private constructor(
         override val parameters: AuthenticationResponseParameters,
-        val origin: String,
         override val hasBeenEncrypted: Boolean,
         override val clientIdRequired: Boolean,
     ) : ResponseParametersFrom() {
         companion object {
             fun createFromOpenId4VpResponse(input: OpenId4VpResponse): DcApi = DcApi(
                 parameters = input.data,
-                origin = input.origin ?: throw IllegalStateException("Origin not set by browser"),
                 hasBeenEncrypted = input.data.response?.count { it == '.' } == 4,
                 clientIdRequired = !input.protocol.isUnsignedOpenId4VpRequest
             )
@@ -69,5 +67,3 @@ sealed class ResponseParametersFrom {
         }
 
 }
-
-

@@ -305,7 +305,6 @@ val OpenId4VpDcApiProtocolTest by matrixSuite {
                 .let { f.holderOid4vp.finalizeAuthorizationResponse(it).getOrThrow() }
                 .shouldBeInstanceOf<AuthenticationResponseResult.DcApi>()
                 .params.shouldBeInstanceOf<OpenId4VpResponseUnsigned>()
-                .copy(origin = rpOrigin)
 
             val validation = f.dcApiVerifier.validateAuthnResponse(response, transactionId).getOrThrow()
                 .shouldBeInstanceOf<AuthnResponseResult>()

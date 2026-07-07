@@ -48,6 +48,8 @@ Release 7.0.0 (unreleased):
     - Add signature and time validity checks of certificate against the trust list
     - Add JAdES B-B validation (Used when fetching LoTE)
     - Add `issuer` property in `StoreEntry`, for evaluation of trust against trust list
+- Digital Credentials API:
+    - BREAKING: Remove the `origin` property from Digital Credentials API response models.
  - Deprecations:
    - Remove code deprecated in 6.0.0, e.g. various `DCAPIWallet*` and related classes, `vckJsonSerializer`
  - Dependencies:

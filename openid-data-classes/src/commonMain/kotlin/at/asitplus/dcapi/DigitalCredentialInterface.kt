@@ -11,12 +11,10 @@ import kotlinx.serialization.json.JsonClassDiscriminator
 @JsonClassDiscriminator(SerialNames.PROTOCOL)
 sealed class DigitalCredentialInterface {
     abstract val protocol: ExchangeProtocolIdentifier
-    abstract val origin: String?
 
     object SerialNames {
         const val DATA = "data"
         const val PROTOCOL = "protocol"
-        const val ORIGIN = "origin"
         const val ORG_ISO_MDOC = ExchangeProtocolIdentifier.ORG_ISO_MDOC
         const val OPENID4VP_V1_UNSIGNED = ExchangeProtocolIdentifier.OPENID4VP_V1_UNSIGNED
         const val OPENID4VP_V1_SIGNED = ExchangeProtocolIdentifier.OPENID4VP_V1_SIGNED
@@ -29,8 +27,6 @@ sealed class DigitalCredentialInterface {
 data class IsoMdocResponse(
     @SerialName(SerialNames.DATA)
     val data: DCAPIResponse,
-    @SerialName(SerialNames.ORIGIN)
-    override val origin: String? = null,
 ) : DigitalCredentialInterface() {
     override val protocol: ExchangeProtocolIdentifier
         get() = ExchangeProtocolIdentifier.IsoMdocAnnexC
@@ -42,7 +38,6 @@ data class IsoMdocResponse(
 sealed interface OpenId4VpResponse {
     val protocol: ExchangeProtocolIdentifier
     val data: AuthenticationResponseParameters
-    val origin: String?
 }
 
 @Serializable
@@ -50,8 +45,6 @@ sealed interface OpenId4VpResponse {
 data class OpenId4VpResponseSigned(
     @SerialName(SerialNames.DATA)
     override val data: AuthenticationResponseParameters,
-    @SerialName(SerialNames.ORIGIN)
-    override val origin: String? = null,
 ) : DigitalCredentialInterface(), OpenId4VpResponse {
     override val protocol: ExchangeProtocolIdentifier
         get() = ExchangeProtocolIdentifier.OpenId4VpV1Signed
@@ -62,8 +55,6 @@ data class OpenId4VpResponseSigned(
 data class OpenId4VpResponseMultiSigned(
     @SerialName(SerialNames.DATA)
     override val data: AuthenticationResponseParameters,
-    @SerialName(SerialNames.ORIGIN)
-    override val origin: String? = null,
 ) : DigitalCredentialInterface(), OpenId4VpResponse {
     override val protocol: ExchangeProtocolIdentifier
         get() = ExchangeProtocolIdentifier.OpenId4VpV1Multisigned
@@ -74,8 +65,6 @@ data class OpenId4VpResponseMultiSigned(
 data class OpenId4VpResponseUnsigned(
     @SerialName(SerialNames.DATA)
     override val data: AuthenticationResponseParameters,
-    @SerialName(SerialNames.ORIGIN)
-    override val origin: String? = null,
 ) : DigitalCredentialInterface(), OpenId4VpResponse {
     override val protocol: ExchangeProtocolIdentifier
         get() = ExchangeProtocolIdentifier.OpenId4VpV1Unsigned

@@ -101,7 +101,6 @@ data class OpenId4VpRequestOptions(
         if (isAnyDcApi) {
             require(isDcql) { "DC API only supports DCQL" }
             require(!isSiop) { "DC API does not support SIOP (id_token)" }
-            requireNotNull(expectedOrigins) { "Expected origins must be set for DC API" }
         } else {
             require(populateClientId) { "client_id should be set for anything but (unsigned) DC API requests" }
         }
