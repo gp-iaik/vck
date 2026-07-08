@@ -39,6 +39,7 @@ import at.asitplus.wallet.lib.iso.Iso180137AnnexCVerifier
 import io.kotest.assertions.throwables.shouldThrowAny
 import io.kotest.matchers.collections.shouldNotBeEmpty
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.types.shouldBeInstanceOf
 import kotlinx.serialization.encodeToByteArray
 import kotlin.random.Random
 import kotlin.time.Clock
@@ -159,6 +160,60 @@ val IsoMdocDcapiResponseBuilderTest by matrixSuite {
         ).getOrThrow()
 
         verified.documents.shouldNotBeEmpty()
+    }
+
+    test("Annex C holder creates presentation request") {
+        val fixture = dcapiFixture()
+
+        val presentationRequest = Iso180137AnnexCHolder()
+            .createPresentationRequest(fixture.walletRequest)
+            .getOrThrow()
+
+        presentationRequest.presentationDefinition.inputDescriptors.single().id shouldBe
+                ConstantIndex.AtomicAttribute2023.isoDocType
+    }
+
+    test("Annex C holder finalizes encrypted response") {
+        val fixture = dcapiFixture()
+        val holderKey = EphemeralKeyWithoutCert()
+        val holderAgent = HolderAgent(holderKey)
+        holderAgent.storeCredential(
+            IssuerAgent(
+                keyMaterial = EphemeralKeyWithSelfSignedCert(),
+                identifier = "https://issuer.example.com/".toUri(),
+            ).issueCredential(isoCredential(holderKey.publicKey))
+                .getOrThrow()
+                .toStoreCredentialInput()
+        ).getOrThrow()
+
+        val encryptedResponse = Iso180137AnnexCHolder(
+            keyMaterial = holderKey,
+            holder = holderAgent,
+        ).finalizeResponse(
+            request = fixture.walletRequest,
+            credentialPresentation = fixture.presentationRequestBuilder.toPresentationExchangeRequest()
+                .toCredentialPresentation() as CredentialPresentation.PresentationExchangePresentation,
+        ).getOrThrow()
+
+        val verified = fixture.verifier.validateResponse(
+            receivedData = DCAPIResponse(encryptedResponse),
+            externalId = STATE,
+            decryptHpke = ::decryptHpke,
+            expectedOrigin = ORIGIN,
+        ).getOrThrow()
+
+        verified.documents.shouldNotBeEmpty()
+    }
+
+    test("DC API holder dispatches Annex C requests") {
+        val fixture = dcapiFixture()
+
+        DcApiHolder(
+            openId4VpHolder = OpenId4VpHolder(),
+            iso180137AnnexCHolder = Iso180137AnnexCHolder(),
+        ).prepare(fixture.walletRequest)
+            .getOrThrow()
+            .shouldBeInstanceOf<DcApiPreparationState.Iso180137AnnexC>()
     }
 }
 

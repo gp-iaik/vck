@@ -15,6 +15,9 @@ import at.asitplus.wallet.lib.oidvci.OAuth2Exception.InvalidRequest
 import at.asitplus.wallet.lib.oidvci.encodeToParameters
 import at.asitplus.wallet.lib.openid.AuthenticationResponseResult
 import at.asitplus.wallet.lib.openid.AuthorizationResponsePreparationState
+import at.asitplus.wallet.lib.openid.DcApiHolder
+import at.asitplus.wallet.lib.openid.DcApiPreparationState
+import at.asitplus.wallet.lib.openid.Iso180137AnnexCHolder
 import at.asitplus.wallet.lib.openid.OpenId4VpHolder
 import io.github.aakira.napier.Napier
 import io.ktor.client.*
@@ -110,6 +113,17 @@ class OpenId4VpWallet(
         requestObjectJwsVerifier = { _ -> true }, // unsure about this one?
     )
 
+// TODO is this the correct place or should we have another wallet class for annex c?
+    val iso180137AnnexCHolder = Iso180137AnnexCHolder(
+        holder = holderAgent,
+        keyMaterial = keyMaterial,
+    )
+
+    val dcApiHolder = DcApiHolder(
+        openId4VpHolder = openId4VpHolder,
+        iso180137AnnexCHolder = iso180137AnnexCHolder,
+    )
+
     /**
      * Sends an error response with the appropriate method.
      * Returns nothing as we don't expect a useful response from the remote verifier.
@@ -140,6 +154,11 @@ class OpenId4VpWallet(
         input: String,
     ): KmmResult<AuthorizationResponsePreparationState> =
         openId4VpHolder.startAuthorizationResponsePreparation(input)
+
+    suspend fun prepareDcApiRequest(
+        request: RequestParametersFrom.DcApiRequest,
+    ): KmmResult<DcApiPreparationState> =
+        dcApiHolder.prepare(request)
 
     /**
      * Calls [openId4VpHolder] to finalize the authentication response.
@@ -216,6 +235,38 @@ class OpenId4VpWallet(
         preparationState: AuthorizationResponsePreparationState,
     ) = catching {
         openId4VpHolder.getMatchingCredentials(preparationState).getOrThrow()
+    }
+
+    suspend fun getMatchingCredentials(
+        request: RequestParametersFrom.IsoMdocDcApi,
+    ) = catching {
+        iso180137AnnexCHolder.getMatchingCredentials(request).getOrThrow()
+    }
+
+    suspend fun getMatchingCredentials(
+        state: DcApiPreparationState,
+    ) = catching {
+        dcApiHolder.getMatchingCredentials(state).getOrThrow()
+    }
+
+    suspend fun finalizeIso180137AnnexCResponse(
+        request: RequestParametersFrom.IsoMdocDcApi,
+        credentialPresentation: CredentialPresentation.PresentationExchangePresentation,
+    ) = catching {
+        iso180137AnnexCHolder.finalizeResponse(
+            request = request,
+            credentialPresentation = credentialPresentation,
+        ).getOrThrow()
+    }
+
+    suspend fun finalizeDcApiResponse(
+        state: DcApiPreparationState,
+        credentialPresentation: CredentialPresentation? = null,
+    ) = catching {
+        dcApiHolder.finalize(
+            state = state,
+            credentialPresentation = credentialPresentation,
+        ).getOrThrow()
     }
 
     /**
