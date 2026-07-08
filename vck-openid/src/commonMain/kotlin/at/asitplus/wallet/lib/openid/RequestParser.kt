@@ -53,20 +53,6 @@ class RequestParser(
         input.parseParameters().extractRequest()
     }
 
-    /**
-     * Pass in the data received by the DC API in signed or unsigned form. Will return [RequestParametersFrom].
-     */
-    suspend fun parseRequestParameters(
-        input: RequestParametersFrom.DcApiRequest,
-    ): KmmResult<RequestParametersFrom<AuthenticationRequestParameters>> = catching {
-        when (input) {
-            is RequestParametersFrom.OpenId4VpDcApiSigned -> input
-            is RequestParametersFrom.OpenId4VpDcApiUnsigned -> input
-            is RequestParametersFrom.OpenId4VpDcApiMultiSigned -> input
-            is RequestParametersFrom.IsoMdocDcApi -> throw InvalidRequest("ISO mdoc DC API requests are not OpenID4VP requests")
-        }
-    }
-
     private suspend fun String.parseParameters(): RequestParametersFrom<out RequestParameters> =
         parseAsJwsRequest(null)
             ?: parseFromParameters()

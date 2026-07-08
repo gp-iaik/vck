@@ -13,6 +13,7 @@ val DigitalCredentialCreationOptionsTest by matrixSuite {
         val creationOptions = CredentialCreationOptions.create(options)
         creationOptions.mediation shouldBe "required"
         creationOptions.digital shouldBe options
+        DIGITAL_CREDENTIALS_DEV_JSON.decodeSingleDigitalCredentialOffer() shouldBe options.requests.single().data
     }
 
     test("authorization_server_metadata and authorization_server are mutually exclusive") {
