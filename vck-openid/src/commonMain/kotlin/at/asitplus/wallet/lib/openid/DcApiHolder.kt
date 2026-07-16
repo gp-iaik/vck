@@ -6,16 +6,40 @@ import at.asitplus.dcapi.DCAPIResponse
 import at.asitplus.dcapi.DigitalCredentialInterface
 import at.asitplus.dcapi.IsoMdocResponse
 import at.asitplus.openid.RequestParametersFrom
+import at.asitplus.wallet.lib.agent.EphemeralKeyWithoutCert
+import at.asitplus.wallet.lib.agent.Holder
+import at.asitplus.wallet.lib.agent.HolderAgent
+import at.asitplus.wallet.lib.agent.KeyMaterial
 import at.asitplus.wallet.lib.agent.SubjectCredentialStore
 import at.asitplus.wallet.lib.data.CredentialPresentation
 import at.asitplus.wallet.lib.data.CredentialPresentationRequest
+import kotlin.jvm.JvmOverloads
 
-class DcApiHolder(
-    private val openId4VpHolder: OpenId4VpHolder,
-    private val iso180137AnnexCHolder: Iso180137AnnexCHolder,
+/**
+ * Handles requests received through the W3C Digital Credentials API, similar to [DcApiVerifier] on the relying
+ * party side.
+ *
+ * The browser API may transport OpenID4VP or ISO/IEC 18013-7 Annex C requests. This class provides one wallet-facing
+ * entry point and delegates the protocol-specific work to [OpenId4VpHolder] or [Iso180137AnnexCHolder].
+ */
+class DcApiHolder @JvmOverloads constructor(
+    keyMaterial: KeyMaterial = EphemeralKeyWithoutCert(),
+    holder: Holder = HolderAgent(keyMaterial),
+    private val openId4VpHolder: OpenId4VpHolder = OpenId4VpHolder(
+        keyMaterial = keyMaterial,
+        holder = holder,
+    ),
+    private val iso180137AnnexCHolder: Iso180137AnnexCHolder = Iso180137AnnexCHolder(
+        keyMaterial = keyMaterial,
+        holder = holder,
+    ),
 ) {
 
-    suspend fun prepare(
+    /**
+     * Validates the request and prepares credential selection. Clients can inspect the returned state, ask for user
+     * consent, and resume with [finalizeAuthorizationResponse].
+     */
+    suspend fun startAuthorizationResponsePreparation(
         request: RequestParametersFrom.DcApiRequest,
     ): KmmResult<DcApiPreparationState> = catching {
         when (request) {
@@ -53,7 +77,8 @@ class DcApiHolder(
                 iso180137AnnexCHolder.getMatchingCredentials(state.request)
         }
 
-    suspend fun finalize(
+    /** Creates the response to return through the browser's Digital Credentials API. */
+    suspend fun finalizeAuthorizationResponse(
         state: DcApiPreparationState,
         credentialPresentation: CredentialPresentation? = null,
     ): KmmResult<DigitalCredentialInterface> = catching {

@@ -120,6 +120,8 @@ class OpenId4VpWallet(
     )
 
     val dcApiHolder = DcApiHolder(
+        keyMaterial = keyMaterial,
+        holder = holderAgent,
         openId4VpHolder = openId4VpHolder,
         iso180137AnnexCHolder = iso180137AnnexCHolder,
     )
@@ -158,7 +160,7 @@ class OpenId4VpWallet(
     suspend fun prepareDcApiRequest(
         request: RequestParametersFrom.DcApiRequest,
     ): KmmResult<DcApiPreparationState> =
-        dcApiHolder.prepare(request)
+        dcApiHolder.startAuthorizationResponsePreparation(request)
 
     /**
      * Calls [openId4VpHolder] to finalize the authentication response.
@@ -263,7 +265,7 @@ class OpenId4VpWallet(
         state: DcApiPreparationState,
         credentialPresentation: CredentialPresentation? = null,
     ) = catching {
-        dcApiHolder.finalize(
+        dcApiHolder.finalizeAuthorizationResponse(
             state = state,
             credentialPresentation = credentialPresentation,
         ).getOrThrow()

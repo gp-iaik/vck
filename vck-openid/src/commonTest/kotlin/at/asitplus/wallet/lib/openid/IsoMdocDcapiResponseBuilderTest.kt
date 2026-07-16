@@ -3,6 +3,7 @@ package at.asitplus.wallet.lib.openid
 import at.asitplus.dcapi.DCAPIHandover.Companion.TYPE_DCAPI
 import at.asitplus.dcapi.DCAPIInfo
 import at.asitplus.dcapi.DCAPIResponse
+import at.asitplus.dcapi.IsoMdocResponse
 import at.asitplus.iso.DeviceAuthentication
 import at.asitplus.iso.DeviceNameSpaces
 import at.asitplus.iso.DeviceSignedItem
@@ -205,15 +206,38 @@ val IsoMdocDcapiResponseBuilderTest by matrixSuite {
         verified.documents.shouldNotBeEmpty()
     }
 
-    test("DC API holder dispatches Annex C requests") {
+    test("DC API holder dispatches and finalizes Annex C requests") {
         val fixture = dcapiFixture()
+        val holderKey = EphemeralKeyWithoutCert()
+        val holderAgent = HolderAgent(holderKey)
+        holderAgent.storeCredential(
+            IssuerAgent(
+                keyMaterial = EphemeralKeyWithSelfSignedCert(),
+                identifier = "https://issuer.example.com/".toUri(),
+            ).issueCredential(isoCredential(holderKey.publicKey))
+                .getOrThrow()
+                .toStoreCredentialInput()
+        ).getOrThrow()
+        val dcApiHolder = DcApiHolder(
+            keyMaterial = holderKey,
+            holder = holderAgent,
+        )
 
-        DcApiHolder(
-            openId4VpHolder = OpenId4VpHolder(),
-            iso180137AnnexCHolder = Iso180137AnnexCHolder(),
-        ).prepare(fixture.walletRequest)
+        val state = dcApiHolder.startAuthorizationResponsePreparation(fixture.walletRequest)
             .getOrThrow()
             .shouldBeInstanceOf<DcApiPreparationState.Iso180137AnnexC>()
+        val response = dcApiHolder.finalizeAuthorizationResponse(
+            state = state,
+            credentialPresentation = fixture.presentationRequestBuilder.toPresentationExchangeRequest()
+                .toCredentialPresentation(),
+        ).getOrThrow().shouldBeInstanceOf<IsoMdocResponse>()
+
+        fixture.verifier.validateResponse(
+            receivedData = response.data,
+            externalId = STATE,
+            decryptHpke = ::decryptHpke,
+            expectedOrigin = ORIGIN,
+        ).getOrThrow().documents.shouldNotBeEmpty()
     }
 }
 
