@@ -14,7 +14,7 @@ Release 7.0.0 (unreleased):
     - Document usage of remote metadata retrieval
 - OpenID for Verifiable Presentations:
     - Add `DcApiHolder` as the unified wallet-side entry point for OpenID4VP and ISO/IEC 18013-7 Annex C requests received through the Digital Credentials API.
-    - Add `Iso180137AnnexCHolder` for protocol-specific ISO/IEC 18013-7 Annex C request matching and response creation.
+    - Add platform response codecs for Android JSON and iOS ISO/IEC 18013-7 Annex C bytes without introducing platform dependencies.
     - Fix SD-JWT presentation validation for Digital Credentials API responses by checking the key binding JWT audience against the request origin (`origin:<origin>`) instead of the verifier client identifier.
     - Fix DCQL matching for credential queries without `claims`: selectively disclosable credentials now return an explicit mandatory-claims-only result, while non-selectively disclosable credentials still return all claims.
     - Fix disclosure of SD-JWT claims from foreign issuers: match disclosure digests against the originally serialized disclosures instead of re-serializing them, since digests are computed over the exact bytes (RFC 9901, section 4.2.3), e.g. failing for disclosures serialized with whitespace.
