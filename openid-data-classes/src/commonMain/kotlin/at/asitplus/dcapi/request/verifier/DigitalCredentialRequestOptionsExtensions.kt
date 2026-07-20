@@ -6,9 +6,13 @@ import at.asitplus.openid.RequestParametersFrom
 import at.asitplus.signum.indispensable.josef.io.joseCompliantSerializer
 import at.asitplus.signum.indispensable.josef.typed
 
-fun String.decodeDigitalCredentialRequestOptions(): DigitalCredentialRequestOptions =
-    joseCompliantSerializer.decodeFromString(this)
 
+/**
+ * Selects [selectedProtocol] and wraps its request data with metadata supplied by the platform matcher.
+ *
+ * @throws IllegalStateException if the requested protocol is absent.
+ * @throws IllegalArgumentException if [callingPackageName] is absent for an OpenID4VP request.
+ */
 fun DigitalCredentialRequestOptions.toRequestParametersFrom(
     selectedProtocol: String,
     credentialIds: Collection<String>,
@@ -22,6 +26,12 @@ fun DigitalCredentialRequestOptions.toRequestParametersFrom(
         callingPackageName = callingPackageName,
     )
 
+/**
+ * Selects [selectedProtocol] and wraps its request data with metadata supplied by the platform matcher.
+ *
+ * @throws IllegalStateException if the requested protocol is absent.
+ * @throws IllegalArgumentException if [callingPackageName] is absent for an OpenID4VP request.
+ */
 fun DigitalCredentialRequestOptions.toRequestParametersFrom(
     selectedProtocol: ExchangeProtocolIdentifier,
     credentialIds: Collection<String>,

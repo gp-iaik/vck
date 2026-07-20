@@ -10,13 +10,21 @@ import at.asitplus.jsonpath.core.NormalizedJsonPath
 import at.asitplus.jsonpath.core.NormalizedJsonPathSegment.NameSegment
 import kotlinx.serialization.Serializable
 
+/**
+ * iOS-only summary of the mdoc data elements shown by the system before the wallet receives the full Annex C request.
+ *
+ * Use [isConsistentWith] after receiving the full request and reject the flow when it returns `false`. Comparison is
+ * independent of document, namespace, and data-element ordering, but includes each `intentToRetain` value.
+ */
 @Serializable
 data class IosDcApiMdocPreRequestSummary(
     val documentRequests: List<IosDcApiMdocPreRequestDocumentRequest>
 ) {
+    /** Checks that the full request asks for exactly the documents and data elements shown in this summary. */
     fun isConsistentWith(rawRequest: IsoMdocRequest): Boolean =
         normalizedDocumentRequests() == rawRequest.normalizedDocumentRequests()
 
+    /** Converts the summary into a Presentation Exchange-shaped request for pre-request credential matching. */
     fun toDifInputDescriptors(): List<DifInputDescriptor> =
         documentRequests.map { request ->
             DifInputDescriptor(
@@ -44,6 +52,7 @@ data class IosDcApiMdocPreRequestSummary(
         documentRequests.map { it.normalize() }.sorted()
 }
 
+/** One document and its requested namespace/data-element pairs from the iOS pre-request summary. */
 @Serializable
 data class IosDcApiMdocPreRequestDocumentRequest(
     val docType: String,

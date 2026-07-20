@@ -9,9 +9,11 @@ import at.asitplus.iso.DocRequest
 import at.asitplus.jsonpath.core.NormalizedJsonPath
 import at.asitplus.jsonpath.core.NormalizedJsonPathSegment.NameSegment
 
+/** Converts all document requests into descriptors usable by VC-K's Presentation Exchange matcher. */
 fun IsoMdocRequest.toDifInputDescriptors(): List<DifInputDescriptor> =
     deviceRequest.docRequests.toDifInputDescriptors()
 
+/** Converts these ISO document requests into descriptors usable by VC-K's Presentation Exchange matcher. */
 fun Array<DocRequest>.toDifInputDescriptors(): List<DifInputDescriptor> =
     map { it.toDifInputDescriptor() }
 

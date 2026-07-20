@@ -115,6 +115,19 @@ For data classes that contain arrays or collections with content-sensitive seman
 
 ## Cross-Cutting Concepts
 
+### Digital Credentials API Integration
+
+The Digital Credentials API is a transport for multiple presentation protocols. Wallets should use `DcApiHolder` in
+`vck-openid` as the protocol-agnostic entry point; it delegates OpenID4VP requests to `OpenId4VpHolder` and ISO/IEC
+18013-7 Annex C requests to `Iso180137AnnexCHolder`. Keep the returned `DcApiPreparationState` through credential
+selection and finalization instead of duplicating protocol dispatch in application code.
+
+Platform-neutral request/response models and codecs belong in `openid-data-classes`. Android `Bundle` conversion,
+Apple framework objects, activity/extension lifecycle, and other SDK-specific adaptation stay in wallet applications.
+In particular, do not add Android or Apple framework dependencies to VC-K for DC API integration. The iOS-specific
+pre-request summary is a serializable wire model rather than an Apple framework type, so it remains common code while
+being explicitly named `IosDcApiMdocPreRequestSummary`.
+
 ### Multiplatform Stack
 
 VC-K is designed around Kotlin Multiplatform constraints. Common code uses

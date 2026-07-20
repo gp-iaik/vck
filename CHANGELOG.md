@@ -13,8 +13,6 @@ Release 7.0.0 (unreleased):
     - Import data classes and data element strings from credentials into this library for [EU PID](https://github.com/a-sit-plus/eu-pid-credential), [EU PID in SD-JWT](https://github.com/a-sit-plus/eu-pid-credential-sdjwt/) and [Mobile Driving Licence](https://github.com/a-sit-plus/mobile-driving-licence-credential/)
     - Document usage of remote metadata retrieval
 - OpenID for Verifiable Presentations:
-    - Add `DcApiHolder` as the unified wallet-side entry point for OpenID4VP and ISO/IEC 18013-7 Annex C requests received through the Digital Credentials API.
-    - Add platform response codecs for Android JSON and iOS ISO/IEC 18013-7 Annex C bytes without introducing platform dependencies.
     - Fix SD-JWT presentation validation for Digital Credentials API responses by checking the key binding JWT audience against the request origin (`origin:<origin>`) instead of the verifier client identifier.
     - Fix DCQL matching for credential queries without `claims`: selectively disclosable credentials now return an explicit mandatory-claims-only result, while non-selectively disclosable credentials still return all claims.
     - Fix disclosure of SD-JWT claims from foreign issuers: match disclosure digests against the originally serialized disclosures instead of re-serializing them, since digests are computed over the exact bytes (RFC 9901, section 4.2.3), e.g. failing for disclosures serialized with whitespace.
@@ -22,6 +20,11 @@ Release 7.0.0 (unreleased):
     - Consolidate interface of `OpenId4VpVerifier`: All clients should use `createAuthnRequest()`, so we deprecate methods `submitAuthnRequest()` or `createAuthnRequestAsSignedRequestObject()`
     - Extract `DcApiVerifier` as a pendant to `OpenId4VpVerifier` which handles DCAPI requests only, deprecating `Iso180137AnnexCVerifier`
     - Move `CreationOptions` and `CreatedRequest` to upper level (`at.asitplus.wallet.lib.openid`) instead of nesting in `OpenId4VpVerifier`
+- Digital Credentials API:
+    - Add `DcApiHolder` as the unified wallet-side entry point for OpenID4VP and ISO/IEC 18013-7 Annex C requests received through the Digital Credentials API.
+    - Add platform response codecs for Android JSON and iOS ISO/IEC 18013-7 Annex C bytes without introducing platform dependencies.
+    - Add request-option conversion helpers that combine a selected DC API protocol with trusted platform metadata into `RequestParametersFrom.DcApiRequest`.
+    - Add the iOS-specific `IosDcApiMdocPreRequestSummary` model for pre-request credential matching and consistency checks against the full Annex C request.
 - Verifier:
     - Add `NonceChallengeVerifier`, a thin `Verifier` wrapper that creates presentation challenges from a `NonceService` and verifies SD-JWT/VC-JWT presentations against the embedded challenge.
     - Move OpenID4VP request nonce handling out of `VerifierAgent` and consume nonces after successful response validation to prevent replay.

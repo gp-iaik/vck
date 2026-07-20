@@ -31,6 +31,7 @@ class Iso180137AnnexCHolder @JvmOverloads constructor(
         SignCoseDetached(keyMaterial, CoseHeaderNone(), CoseHeaderNone()),
 ) {
 
+    /** Adapts the Annex C device request to the presentation model used by VC-K's credential matcher. */
     fun createPresentationRequest(
         request: RequestParametersFrom.IsoMdocDcApi,
     ): KmmResult<CredentialPresentationRequest.PresentationExchangeRequest> = catching {
@@ -41,6 +42,7 @@ class Iso180137AnnexCHolder @JvmOverloads constructor(
         )
     }
 
+    /** Matches mdoc credentials, restricted to platform-selected credential IDs when supplied in [request]. */
     suspend fun getMatchingCredentials(
         request: RequestParametersFrom.IsoMdocDcApi,
     ): KmmResult<PresentationExchangeMatchingResult<SubjectCredentialStore.StoreEntry>> = catching {
@@ -55,6 +57,7 @@ class Iso180137AnnexCHolder @JvmOverloads constructor(
         )
     }
 
+    /** Creates and encrypts the selected mdoc device response according to ISO/IEC 18013-7 Annex C. */
     suspend fun finalizeResponse(
         request: RequestParametersFrom.IsoMdocDcApi,
         credentialPresentation: CredentialPresentation.PresentationExchangePresentation,

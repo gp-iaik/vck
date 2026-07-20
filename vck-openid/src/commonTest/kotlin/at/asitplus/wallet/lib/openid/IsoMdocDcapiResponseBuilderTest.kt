@@ -12,8 +12,10 @@ import at.asitplus.iso.IssuerSignedItem
 import at.asitplus.iso.serializeOrigin
 import at.asitplus.iso.sha256
 import at.asitplus.iso.wrapInCborTag
+import at.asitplus.openid.ClaimDescription
 import at.asitplus.openid.OidcUserInfo
 import at.asitplus.openid.OidcUserInfoExtended
+import at.asitplus.openid.OpenId4VciClaimsPathPointer
 import at.asitplus.openid.RequestParametersFrom
 import at.asitplus.openid.dcql.DCQLClaimsPathPointer
 import at.asitplus.openid.dcql.toIso180137AnnexCDeviceRequest
@@ -34,10 +36,12 @@ import at.asitplus.wallet.lib.agent.IssuerAgent
 import at.asitplus.wallet.lib.agent.toStoreCredentialInput
 import at.asitplus.wallet.lib.data.ConstantIndex
 import at.asitplus.wallet.lib.data.CredentialPresentation
+import at.asitplus.wallet.lib.data.IsoMdocCredentialScheme
 import at.asitplus.wallet.lib.data.rfc3986.toUri
 import at.asitplus.wallet.lib.iso.Iso180137AnnexCRequestOptions
 import at.asitplus.wallet.lib.iso.Iso180137AnnexCVerifier
 import io.kotest.assertions.throwables.shouldThrowAny
+import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.collections.shouldNotBeEmpty
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
@@ -163,6 +167,59 @@ val IsoMdocDcapiResponseBuilderTest by matrixSuite {
         verified.documents.shouldNotBeEmpty()
     }
 
+    test("encrypted Annex C response contains all requested documents") {
+        val fixture = dcapiFixture(
+            listOf(
+                RequestOptionsCredential(
+                    credentialScheme = ConstantIndex.AtomicAttribute2023,
+                    representation = ConstantIndex.CredentialRepresentation.ISO_MDOC,
+                    attributePaths = setOf(
+                        DCQLClaimsPathPointer(ConstantIndex.AtomicAttribute2023.CLAIM_GIVEN_NAME)
+                    ),
+                ),
+                RequestOptionsCredential(
+                    credentialScheme = SecondAtomicAttribute,
+                    representation = ConstantIndex.CredentialRepresentation.ISO_MDOC,
+                    attributePaths = setOf(DCQLClaimsPathPointer(SecondAtomicAttribute.CLAIM_FAMILY_NAME)),
+                ),
+            )
+        )
+        val holderKey = EphemeralKeyWithoutCert()
+        val holderAgent = HolderAgent(holderKey)
+        val issuer = IssuerAgent(
+            keyMaterial = EphemeralKeyWithSelfSignedCert(),
+            identifier = "https://issuer.example.com/".toUri(),
+        )
+        listOf(
+            isoCredential(holderKey.publicKey),
+            isoCredential(
+                subjectPublicKey = holderKey.publicKey,
+                scheme = SecondAtomicAttribute,
+                elementIdentifier = SecondAtomicAttribute.CLAIM_FAMILY_NAME,
+                elementValue = "Meier",
+            ),
+        ).forEach { credential ->
+            holderAgent.storeCredential(
+                issuer.issueCredential(credential).getOrThrow().toStoreCredentialInput()
+            ).getOrThrow()
+        }
+
+        val encryptedResponse = IsoMdocDcapiResponseBuilder.buildEncryptedResponse(
+            credentialPresentation = fixture.presentationRequestBuilder.toPresentationExchangeRequest()
+                .toCredentialPresentation() as CredentialPresentation.PresentationExchangePresentation,
+            isoMdocWalletRequest = fixture.walletRequest,
+            keyMaterial = holderKey,
+            holder = holderAgent,
+        )
+
+        fixture.verifier.validateResponse(
+            receivedData = DCAPIResponse(encryptedResponse),
+            externalId = STATE,
+            decryptHpke = ::decryptHpke,
+            expectedOrigin = ORIGIN,
+        ).getOrThrow().documents.shouldHaveSize(2)
+    }
+
     test("Annex C holder creates presentation request") {
         val fixture = dcapiFixture()
 
@@ -241,18 +298,18 @@ val IsoMdocDcapiResponseBuilderTest by matrixSuite {
     }
 }
 
-private suspend fun dcapiFixture(): DcapiFixture {
-    val verifierKey = EphemeralKeyWithoutCert()
-    val verifier = Iso180137AnnexCVerifier(decryptionKeyMaterial = verifierKey)
-    val presentationRequestBuilder = CredentialPresentationRequestBuilder(
-        listOf(
-            RequestOptionsCredential(
-                credentialScheme = ConstantIndex.AtomicAttribute2023,
-                representation = ConstantIndex.CredentialRepresentation.ISO_MDOC,
-                attributePaths = setOf(DCQLClaimsPathPointer(ConstantIndex.AtomicAttribute2023.CLAIM_GIVEN_NAME)),
-            )
+private suspend fun dcapiFixture(
+    requestOptions: List<RequestOptionsCredential> = listOf(
+        RequestOptionsCredential(
+            credentialScheme = ConstantIndex.AtomicAttribute2023,
+            representation = ConstantIndex.CredentialRepresentation.ISO_MDOC,
+            attributePaths = setOf(DCQLClaimsPathPointer(ConstantIndex.AtomicAttribute2023.CLAIM_GIVEN_NAME)),
         )
     )
+): DcapiFixture {
+    val verifierKey = EphemeralKeyWithoutCert()
+    val verifier = Iso180137AnnexCVerifier(decryptionKeyMaterial = verifierKey)
+    val presentationRequestBuilder = CredentialPresentationRequestBuilder(requestOptions)
     val isoRequest = verifier.createRequest(
         Iso180137AnnexCRequestOptions(
             deviceRequest = presentationRequestBuilder.toDCQLRequest()!!.dcqlQuery.toIso180137AnnexCDeviceRequest(),
@@ -272,21 +329,35 @@ private suspend fun dcapiFixture(): DcapiFixture {
     )
 }
 
-private fun isoCredential(subjectPublicKey: CryptoPublicKey) =
+private fun isoCredential(
+    subjectPublicKey: CryptoPublicKey,
+    scheme: IsoMdocCredentialScheme = ConstantIndex.AtomicAttribute2023,
+    elementIdentifier: String = ConstantIndex.AtomicAttribute2023.CLAIM_GIVEN_NAME,
+    elementValue: String = "Susanne",
+) =
     CredentialToBeIssued.Iso(
         issuerSignedItems = listOf(
             IssuerSignedItem(
                 digestId = 0U,
                 random = Random.nextBytes(16),
-                elementIdentifier = ConstantIndex.AtomicAttribute2023.CLAIM_GIVEN_NAME,
-                elementValue = "Susanne",
+                elementIdentifier = elementIdentifier,
+                elementValue = elementValue,
             )
         ),
         expiration = Clock.System.now() + 10.minutes,
-        scheme = ConstantIndex.AtomicAttribute2023,
+        scheme = scheme,
         subjectPublicKey = subjectPublicKey,
         userInfo = OidcUserInfoExtended.fromOidcUserInfo(OidcUserInfo("subject")).getOrThrow(),
     )
+
+private object SecondAtomicAttribute : IsoMdocCredentialScheme {
+    const val CLAIM_FAMILY_NAME = "family_name"
+
+    override val isoNamespace: String = "at.a-sit.wallet.atomic-attribute-2025"
+    override val isoDocType: String = "at.a-sit.wallet.atomic-attribute-2025.iso"
+    override val claimDescriptions: Set<ClaimDescription> =
+        setOf(ClaimDescription(OpenId4VciClaimsPathPointer(CLAIM_FAMILY_NAME)))
+}
 
 private data class DcapiFixture(
     val verifier: Iso180137AnnexCVerifier,

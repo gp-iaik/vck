@@ -156,6 +156,7 @@ class OpenId4VpWallet(
     ): KmmResult<AuthorizationResponsePreparationState> =
         openId4VpHolder.startAuthorizationResponsePreparation(input)
 
+    /** Prepares either an OpenID4VP or Annex C request received through the Digital Credentials API. */
     suspend fun prepareDcApiRequest(
         request: RequestParametersFrom.DcApiRequest,
     ): KmmResult<DcApiPreparationState> =
@@ -238,12 +239,14 @@ class OpenId4VpWallet(
         openId4VpHolder.getMatchingCredentials(preparationState).getOrThrow()
     }
 
+    /** Matches credentials through the protocol handler captured by [state]. */
     suspend fun getMatchingCredentials(
         state: DcApiPreparationState,
     ) = catching {
         dcApiHolder.getMatchingCredentials(state).getOrThrow()
     }
 
+    /** Finalizes [state] into a platform-independent Digital Credentials API response model. */
     suspend fun finalizeDcApiResponse(
         state: DcApiPreparationState,
         credentialPresentation: CredentialPresentation? = null,

@@ -31,6 +31,7 @@ import io.matthewnelson.encoding.core.Encoder.Companion.encodeToString
 import kotlinx.serialization.builtins.ByteArraySerializer
 import kotlinx.serialization.encodeToByteArray
 
+/** Low-level ISO/IEC 18013-7 Annex C device-response construction used by [Iso180137AnnexCHolder]. */
 object IsoMdocDcapiResponseBuilder {
 
     private val hpke = HPKE(
@@ -39,6 +40,7 @@ object IsoMdocDcapiResponseBuilder {
         HPKE.AEAD.AES_128_GCM,
     )
 
+    /** Builds the DC API session transcript bound to the request encryption information and calling origin. */
     fun sessionTranscriptFor(isoMdocWalletRequest: RequestParametersFrom.IsoMdocDcApi): SessionTranscript {
         val isoMdocRequest = isoMdocWalletRequest.parameters.isoMdocRequest
         val callingOrigin = isoMdocWalletRequest.callingOrigin.serializeOrigin()
@@ -50,7 +52,7 @@ object IsoMdocDcapiResponseBuilder {
         return SessionTranscript.forDcApi(handover)
     }
 
-    @OptIn(ExperimentalStdlibApi::class)
+    /** Creates the device response, applies device authentication, and HPKE-encrypts it for the verifier. */
     suspend fun buildEncryptedResponse(
         credentialPresentation: CredentialPresentation.PresentationExchangePresentation,
         isoMdocWalletRequest: RequestParametersFrom.IsoMdocDcApi,
@@ -87,6 +89,7 @@ object IsoMdocDcapiResponseBuilder {
                             throw PresentationException(e)
                         }
                 },
+                returnOneDeviceResponse = true,
             ),
             credentialPresentation = credentialPresentation,
         )
@@ -94,9 +97,11 @@ object IsoMdocDcapiResponseBuilder {
         val presentation =
             presentationResult.getOrThrow() as PresentationResponseParameters.PresentationExchangeParameters
 
-        val deviceResponse = when (val firstResult = presentation.presentationResults.firstOrNull()
-            ?: throw PresentationException(IllegalStateException("Presentation did not return any device response"))) {
-            is CreatePresentationResult.DeviceResponse -> firstResult.deviceResponse
+        val deviceResponse = when (val result = presentation.presentationResults.singleOrNull()
+            ?: throw PresentationException(
+                IllegalStateException("Annex C presentation must return exactly one device response")
+            )) {
+            is CreatePresentationResult.DeviceResponse -> result.deviceResponse
             else -> throw PresentationException(IllegalStateException("Must be a device response"))
         }
         val deviceResponseSerialized = coseCompliantSerializer.encodeToByteArray(deviceResponse)

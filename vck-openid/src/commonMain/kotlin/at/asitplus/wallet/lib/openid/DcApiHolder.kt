@@ -66,6 +66,7 @@ class DcApiHolder @JvmOverloads constructor(
         }
     }
 
+    /** Matches wallet credentials using the protocol and platform-selected credential IDs recorded in [state]. */
     suspend fun getMatchingCredentials(
         state: DcApiPreparationState,
     ): KmmResult<CredentialMatchingResult<SubjectCredentialStore.StoreEntry>> =
@@ -77,7 +78,14 @@ class DcApiHolder @JvmOverloads constructor(
                 iso180137AnnexCHolder.getMatchingCredentials(state.request)
         }
 
-    /** Creates the response to return through the browser's Digital Credentials API. */
+    /**
+     * Creates a protocol-agnostic response to return through the browser's Digital Credentials API.
+     *
+     * Encode the result with `toAndroidDcApiResponseJson()` on Android or, for an Annex C request,
+     * `toIosIsoMdocResponseBytes()` on iOS. Annex C requires a
+     * [CredentialPresentation.PresentationExchangePresentation]; OpenID4VP uses the presentation type requested by
+     * its [CredentialPresentationRequest].
+     */
     suspend fun finalizeAuthorizationResponse(
         state: DcApiPreparationState,
         credentialPresentation: CredentialPresentation? = null,
@@ -110,6 +118,12 @@ class DcApiHolder @JvmOverloads constructor(
     }
 }
 
+/**
+ * Opaque continuation state for a two-step [DcApiHolder] flow.
+ *
+ * [presentationRequest] is suitable for UI rendering and credential selection. Pass the same state back to
+ * [DcApiHolder.getMatchingCredentials] and [DcApiHolder.finalizeAuthorizationResponse].
+ */
 sealed class DcApiPreparationState {
     abstract val request: RequestParametersFrom.DcApiRequest
     abstract val presentationRequest: CredentialPresentationRequest?

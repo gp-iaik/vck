@@ -301,6 +301,49 @@ ISO mDoc credentials with non-primitive values additionally need their CBOR/JSON
 code (e.g. `LibraryInitializer.registerCredentialSerializers(EuPidJsonValueEncoder, EuPidItemValueSerializerMap)`);
 schemes whose values are all primitive (such as the all-boolean age verification) need none.
 
+### Digital Credentials API (DC API)
+
+#### DC API Wallet integration
+
+The browser's Digital Credentials API can carry either OpenID4VP or ISO/IEC 18013-7 Annex C. Use `DcApiHolder` for
+both. It returns a `DcApiPreparationState` that preserves the selected protocol across matching, consent, and
+finalization, and a platform-independent `DigitalCredentialInterface` response.
+
+The platform integration must first convert the selected request into `RequestParametersFrom.DcApiRequest`. For
+serialized `DigitalCredentialRequestOptions`, use `decodeDigitalCredentialRequestOptions()` followed by
+`toRequestParametersFrom(...)`, supplying the protocol and trusted metadata returned by the platform matcher.
+Platform object conversion, including Android `Bundle` conversion, remains in the wallet application.
+
+```kotlin
+val options = requestOptionsJson.decodeDigitalCredentialRequestOptions()
+val request = options.toRequestParametersFrom(
+    selectedProtocol = platformSelection.protocol,
+    credentialIds = platformSelection.credentialIds,
+    callingOrigin = platformSelection.callingOrigin,
+    callingPackageName = platformSelection.callingPackageName,
+)
+
+val dcApiHolder = DcApiHolder(
+    keyMaterial = holderKeyMaterial,
+    holder = holderAgent,
+)
+val preparation = dcApiHolder.startAuthorizationResponsePreparation(request).getOrThrow()
+val matches = dcApiHolder.getMatchingCredentials(preparation).getOrThrow()
+
+// Render preparation.presentationRequest and matches, then build the selected CredentialPresentation after consent.
+val response = dcApiHolder.finalizeAuthorizationResponse(preparation, selectedPresentation).getOrThrow()
+
+val androidResponseJson = response.toAndroidDcApiResponseJson()
+// Annex C only: val iosResponseBytes = response.toIosIsoMdocResponseBytes()
+```
+
+On iOS, `IosDcApiMdocPreRequestSummary` represents the system's pre-request disclosure summary without depending on
+Apple frameworks. It can be converted for early matching with `toDifInputDescriptors()`. Once the full Annex C
+request arrives, require `summary.isConsistentWith(request.parameters.isoMdocRequest)` before continuing so that the
+final request cannot ask for different data than the system showed. The iOS response encoder accepts Annex C
+responses only; OpenID4VP responses use a different platform return path.
+
+
 ## Limitations
 
  - Several parts of the W3C VC Data Model have not been fully implemented, i.e. everything around resolving cryptographic key material.
