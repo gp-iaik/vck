@@ -15,13 +15,13 @@ fun IsoMdocRequest.toDifInputDescriptors(): List<DifInputDescriptor> =
 fun Array<DocRequest>.toDifInputDescriptors(): List<DifInputDescriptor> =
     map { it.toDifInputDescriptor() }
 
-fun DocRequest.toDifInputDescriptor(): DifInputDescriptor {
-    val itemsRequest = itemsRequest.value
-    return DifInputDescriptor(
-        id = itemsRequest.docType,
+/** Converts this ISO document request into a descriptor while preserving `intentToRetain`. */
+fun DocRequest.toDifInputDescriptor(): DifInputDescriptor =
+    DifInputDescriptor(
+        id = itemsRequest.value.docType,
         format = FormatHolder(msoMdoc = FormatContainerJwt()),
         constraints = Constraint(
-            fields = itemsRequest.namespaces.flatMap { (namespace, items) ->
+            fields = itemsRequest.value.namespaces.flatMap { (namespace, items) ->
                 items.entries.map { item ->
                     ConstraintField(
                         path = listOf(
@@ -36,4 +36,3 @@ fun DocRequest.toDifInputDescriptor(): DifInputDescriptor {
             }.toSet()
         )
     )
-}
