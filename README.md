@@ -334,7 +334,8 @@ val matches = dcApiHolder.getMatchingCredentials(preparation).getOrThrow()
 val response = dcApiHolder.finalizeAuthorizationResponse(preparation, selectedPresentation).getOrThrow()
 
 val androidResponseJson = response.toAndroidDcApiResponseJson()
-// Annex C only: val iosResponseBytes = response.toIosIsoMdocResponseBytes()
+// Annex C only:
+val iosResponseBytes = response.toIosIsoMdocResponseBytes()
 ```
 
 On iOS, `IosDcApiMdocPreRequestSummary` represents the system's pre-request disclosure summary without depending on

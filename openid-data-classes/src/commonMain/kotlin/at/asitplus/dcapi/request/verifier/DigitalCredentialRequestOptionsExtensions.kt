@@ -6,6 +6,9 @@ import at.asitplus.openid.RequestParametersFrom
 import at.asitplus.signum.indispensable.josef.io.joseCompliantSerializer
 import at.asitplus.signum.indispensable.josef.typed
 
+/** Decodes Digital Credentials API request options from their JSON representation. */
+fun String.decodeDigitalCredentialRequestOptions(): DigitalCredentialRequestOptions =
+    joseCompliantSerializer.decodeFromString(this)
 
 /**
  * Selects [selectedProtocol] and wraps its request data with metadata supplied by the platform matcher.
