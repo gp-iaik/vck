@@ -27,14 +27,13 @@ import at.asitplus.openid.RelyingPartyMetadata
 import at.asitplus.openid.ResponseParametersFrom
 import at.asitplus.openid.dcql.toIso180137AnnexCDeviceRequest
 import at.asitplus.rfc6749OAuth2AuthorizationFramework.ResponseType
-import at.asitplus.signum.indispensable.CryptoPrivateKey
-import at.asitplus.signum.indispensable.SecretExposure
 import at.asitplus.signum.indispensable.SignatureAlgorithm
 import at.asitplus.signum.indispensable.cosef.io.coseCompliantSerializer
 import at.asitplus.signum.indispensable.cosef.toCoseKey
 import at.asitplus.signum.indispensable.josef.JweEncryption
 import at.asitplus.signum.indispensable.josef.io.joseCompliantSerializer
 import at.asitplus.signum.supreme.asymmetric.HPKE
+import at.asitplus.signum.supreme.sign.Signer
 import at.asitplus.wallet.lib.DefaultNonceService
 import at.asitplus.wallet.lib.MdocDeviceSignatureVerifier
 import at.asitplus.wallet.lib.NonceService
@@ -285,16 +284,14 @@ class DcApiVerifier @JvmOverloads constructor(
         }
     }
 
-    @OptIn(SecretExposure::class)
     internal suspend fun validateIsoResponse(
         receivedData: DCAPIResponse,
         externalId: String,
         expectedOrigin: String
     ): KmmResult<Iso180137AnnexCWrapper> = catching {
         val isoMdocRequest = stateToIsoMdocRequestStore.get(externalId)!!
-        val privateKey = decryptionKeyMaterial.exportPrivateKey().getOrThrow()
-                as? CryptoPrivateKey.EC.WithPublicKey
-            ?: throw IllegalStateException("Expected EC private key")
+        val decryptionKey = decryptionKeyMaterial.getUnderLyingSigner() as? Signer.ECDSA
+            ?: throw IllegalStateException("Expected ECDSA decryption key material")
 
         val encryptedResponseData = receivedData.response.encryptedResponseData
         val serializedOrigin = expectedOrigin.serializeOrigin()
@@ -309,7 +306,7 @@ class DcApiVerifier @JvmOverloads constructor(
         val encodedSessionTranscript = coseCompliantSerializer.encodeToByteArray(sessionTranscript)
         val encodedDeviceResponse = hpke.OpenBase(
             enc = encryptedResponseData.enc,
-            skR = privateKey,
+            skR = decryptionKey,
             info = encodedSessionTranscript,
             aad = byteArrayOf(),
             ct = encryptedResponseData.cipherText,
