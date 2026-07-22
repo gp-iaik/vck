@@ -40,7 +40,13 @@ class NonceChallengeVerifier @JvmOverloads constructor(
         returnOneDeviceResponse = returnOneDeviceResponse,
     )
 
-    /** Uses the challenge embedded in the SD-JWT key binding JWT. */
+    /**
+     * Uses the challenge embedded in the SD-JWT key binding JWT.
+     *
+     * @param audience Exact audience expected in the key binding JWT. When `null`, the wrapped [Verifier] applies its
+     * default. Protocol callers must pass their transport-specific audience, such as `origin:<origin>` for
+     * OpenID4VP over the DC API.
+     */
     suspend fun verifyPresentationSdJwt(
         input: SdJwtSigned,
         transactionData: List<TransactionDataBase64Url>? = null,
