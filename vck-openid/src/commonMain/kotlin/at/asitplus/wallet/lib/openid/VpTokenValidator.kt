@@ -166,9 +166,8 @@ internal class VpTokenValidator(
                     challenge = expectedNonce,
                     transactionData = transactionData,
                     requireCryptographicHolderBinding = requireCryptographicHolderBinding != false,
-                    // OpenID4VP over DC API binds the KB-JWT to the calling Origin instead of the Client Identifier.
-                    // For URL/QR transport, no override is supplied and the verifier's Client Identifier is used.
-                    audience = origin?.let { "origin:$it" },
+                    // OpenID4VP over DC API binds the KB-JWT to the calling Origin; other transports use client_id.
+                    audience = origin?.let { "origin:$it" } ?: clientId,
                 )
             }
 
