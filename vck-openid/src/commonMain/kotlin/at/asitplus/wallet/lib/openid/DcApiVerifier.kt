@@ -240,7 +240,10 @@ class DcApiVerifier @JvmOverloads constructor(
 
             else -> validateAuthnResponse(
                 input = responseParser.parseAuthnResponse(input as OpenId4VpResponse),
-                externalId = externalId
+                externalId = externalId,
+                expectedOrigin = requireNotNull(expectedOrigin) {
+                    "expectedOrigin is required for OpenID4VP responses"
+                },
             ).getOrThrow()
         }
     }
@@ -254,7 +257,8 @@ class DcApiVerifier @JvmOverloads constructor(
      */
     internal suspend fun validateAuthnResponse(
         input: ResponseParametersFrom,
-        externalId: String
+        externalId: String,
+        expectedOrigin: String,
     ): KmmResult<AuthnResponseResult> = catching {
         Napier.d("validateAuthnResponse: $input")
         val authnRequest = requestFactory.loadAuthnRequest(input, externalId)
@@ -269,7 +273,7 @@ class DcApiVerifier @JvmOverloads constructor(
         val expectedNonce = authnRequest.nonce
             ?: throw IllegalArgumentException("nonce not present in $authnRequest")
 
-        val vpTokenValidationResult = validateVpToken(authnRequest, input)
+        val vpTokenValidationResult = validateVpToken(authnRequest, input, expectedOrigin)
 
         AuthnResponseResult(
             idTokenValidationResult = null,
@@ -348,16 +352,22 @@ class DcApiVerifier @JvmOverloads constructor(
     private suspend fun validateVpToken(
         authnRequest: AuthenticationRequestParameters,
         responseParameters: ResponseParametersFrom,
+        expectedOrigin: String,
     ): KmmResult<VpTokenValidationResult> = catching {
         val originalResponseParameters = responseParameters.originalResponseParameters
         require(originalResponseParameters is ResponseParametersFrom.DcApi) {
             "Unsupported response parameters: $originalResponseParameters"
         }
-        authnRequest.verifyExpectedOrigin(originalResponseParameters.origin)
+        if (originalResponseParameters.clientIdRequired) {
+            // is signed request
+            require(authnRequest.verifyExpectedOrigin(expectedOrigin)) {
+                "expected origin '$expectedOrigin' does not match expected_origins"
+            }
+        }
         vpTokenValidator.validateVpToken(
             authnRequest = authnRequest,
             responseParameters = responseParameters,
-            origin = originalResponseParameters.origin,
+            origin = expectedOrigin,
         ).getOrThrow()
     }
 
