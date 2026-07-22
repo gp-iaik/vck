@@ -1,6 +1,6 @@
 package at.asitplus.wallet.lib.openid
 
-import at.asitplus.data.validation.third_party.kotlin.collections.requireIsNotEmpty
+import at.asitplus.data.validation.third_party.kotlin.collections.requireIsNotNullOrEmpty
 import at.asitplus.openid.OpenIdConstants
 import at.asitplus.openid.OpenIdConstants.ResponseMode
 import at.asitplus.openid.OpenIdConstants.SCOPE_OPENID
@@ -103,9 +103,8 @@ data class OpenId4VpRequestOptions(
             require(isDcql) { "DC API only supports DCQL" }
             require(!isSiop) { "DC API does not support SIOP (id_token)" }
             if (populateClientId) {
-                // should be a signed DC API request
-                require(expectedOrigins != null)
-                expectedOrigins.requireIsNotEmpty()
+                // should be a signed DC API request if client_id has to be assigned
+                expectedOrigins.requireIsNotNullOrEmpty()
             }
         } else {
             require(populateClientId) { "client_id should be set for anything but (unsigned) DC API requests" }

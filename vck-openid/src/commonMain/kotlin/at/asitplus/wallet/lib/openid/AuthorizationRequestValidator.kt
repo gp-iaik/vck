@@ -20,6 +20,7 @@ import kotlin.coroutines.cancellation.CancellationException
 
 internal class AuthorizationRequestValidator(
     private val walletNonceMapStore: MapStore<String, String> = DefaultMapStore(),
+    private val allowedDcApiOriginSchemes: suspend () -> Set<String>,
 ) {
     @Throws(OAuth2Exception::class, CancellationException::class)
     suspend fun validateAuthorizationRequest(
@@ -54,15 +55,23 @@ internal class AuthorizationRequestValidator(
         // TODO Verifier Attestation JWT from OpenId4VP 11. also redirect_uri in there
     }
 
-    private fun RequestParametersFrom<AuthenticationRequestParameters>.validateDcApi() {
+    private suspend fun RequestParametersFrom<AuthenticationRequestParameters>.validateDcApi() {
+        val dcApiRequest = this as? RequestParametersFrom.DcApiRequest
+            ?: throw InvalidRequest("DC API request not set even though response mode is ${parameters.responseMode}")
+        val allowedSchemes = allowedDcApiOriginSchemes()
+        if (!dcApiRequest.callingOrigin.usesAllowedOriginScheme(allowedSchemes)) {
+            throw InvalidRequest("calling origin uses a disallowed scheme")
+        }
         when (this) {
             is RequestParametersFrom.OpenId4VpDcApiSigned,
             is RequestParametersFrom.OpenId4VpDcApiMultiSigned -> {
-                val dcApiRequest = this as RequestParametersFrom.DcApiRequest
                 if (this.parameters.clientId == null)
                     throw InvalidRequest("client_id must be set for signed DC API request")
-                if (this.parameters.expectedOrigins == null)
-                    throw InvalidRequest("expected_origins must be set for signed DC API request")
+                val expectedOrigins = this.parameters.expectedOrigins
+                if (expectedOrigins.isNullOrEmpty())
+                    throw InvalidRequest("expected_origins must be set and non-empty for signed DC API request")
+                if (expectedOrigins.any { !it.usesAllowedOriginScheme(allowedSchemes) })
+                    throw InvalidRequest("expected_origins contains an origin with a disallowed scheme")
                 if (!this.parameters.verifyExpectedOrigin(dcApiRequest.callingOrigin))
                     throw InvalidRequest(
                         "calling origin '${dcApiRequest.callingOrigin}' does not match expected_origins"
@@ -77,6 +86,15 @@ internal class AuthorizationRequestValidator(
             else -> throw InvalidRequest("DC API request not set even though response mode is ${parameters.responseMode}")
         }
     }
+
+    /**
+     * Entries are serialized scheme names such as `https`, or a more specific platform-origin
+     * prefix such as `android:apk-key-hash`. The trailing colon is supplied by this check.
+     */
+    private fun String.usesAllowedOriginScheme(allowedSchemes: Set<String>): Boolean =
+        allowedSchemes.any { allowedScheme ->
+            allowedScheme.isNotEmpty() && startsWith("$allowedScheme:")
+        }
 
     private fun RequestParametersFrom<AuthenticationRequestParameters>.isFromRequestObject(): Boolean =
         this is RequestParametersFrom.Json || this is RequestParametersFrom.Jws

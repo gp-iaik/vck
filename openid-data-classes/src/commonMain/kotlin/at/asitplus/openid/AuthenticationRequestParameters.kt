@@ -4,7 +4,6 @@ import at.asitplus.csc.Hashes
 import at.asitplus.csc.enums.SignatureQualifier
 import at.asitplus.csc.serializers.HashesSerializer
 import at.asitplus.dif.PresentationDefinition
-import at.asitplus.iso.serializeOrigin
 import at.asitplus.openid.dcql.DCQLQuery
 import at.asitplus.rfc6749OAuth2AuthorizationFramework.ResponseType
 import at.asitplus.signum.indispensable.asn1.ObjectIdentifier
@@ -416,7 +415,7 @@ data class AuthenticationRequestParameters(
 
     fun verifyExpectedOrigin(actualOrigin: String): Boolean {
         val expected = expectedOrigins ?: return false
-        return expected.any { it.serializeOrigin() == actualOrigin }
+        return expected.any { expectedOrigin -> expectedOrigin == actualOrigin }
     }
 
     override fun equals(other: Any?): Boolean {
@@ -509,4 +508,3 @@ data class AuthenticationRequestParameters(
         return result
     }
 }
-
