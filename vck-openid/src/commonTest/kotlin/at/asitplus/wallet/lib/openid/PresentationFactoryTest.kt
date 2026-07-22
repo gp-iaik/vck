@@ -15,6 +15,7 @@ import at.asitplus.wallet.lib.cbor.CoseHeaderNone
 import at.asitplus.wallet.lib.cbor.SignCoseDetached
 import at.asitplus.wallet.lib.jws.JwsHeaderCertOrJwk
 import at.asitplus.wallet.lib.jws.SignJwt
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.shouldBe
 import kotlinx.serialization.encodeToHexString
 
@@ -227,6 +228,17 @@ val PresentationFactoryTest by matrixSuite {
                     83f6f682764f70656e4944345650444341504948616e646f7665725820fbece366f4
                     212f9762c74cfdbf83b8c69e371d5d68cea09cb4c48ca6daab761a
                 """.trimIndent().replace("\n", "")
+            }
+        }
+
+        "ISO mdoc rejects a non-web DC API origin" {
+            shouldThrow<IllegalArgumentException> {
+                it.presentationFactory.calcSessionTranscript(
+                    nonce = "nonce",
+                    dcApiRequestCallingOrigin = "android:apk-key-hash:AbCdEf",
+                    jsonWebKeys = null,
+                    responseWillBeEncrypted = false,
+                )
             }
         }
     }

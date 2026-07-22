@@ -3,14 +3,15 @@ package at.asitplus.iso
 import at.asitplus.catching
 
 /**
- * Serializes an origin string as defined in
+ * Serializes an HTTP(S) origin string as defined in
  * https://html.spec.whatwg.org/multipage/browsers.html#ascii-serialisation-of-an-origin.
  */
-fun String.serializeOrigin(): String? = catching {
-    // Use Ktor URL for parsing; treat missing/empty host as opaque
+fun String.serializeHttpHttpsOrigin(): String? = catching {
+    // Ktor assigns synthetic host values to some opaque URLs, so check the scheme explicitly.
     val url = io.ktor.http.Url(this)
-    if (url.host.isBlank()) return@catching null
     val scheme = url.protocol.name.lowercase()
+    if (scheme != "http" && scheme != "https") return@catching null
+    if (url.host.isBlank()) return@catching null
     val host = url.host.lowercase()
     val defaultPort = url.protocol.defaultPort
     val port = url.port

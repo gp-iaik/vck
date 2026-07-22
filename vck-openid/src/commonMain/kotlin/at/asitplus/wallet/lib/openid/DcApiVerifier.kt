@@ -19,7 +19,7 @@ import at.asitplus.iso.DeviceResponse
 import at.asitplus.iso.EncryptionInfo
 import at.asitplus.iso.EncryptionParameters
 import at.asitplus.iso.SessionTranscript
-import at.asitplus.iso.serializeOrigin
+import at.asitplus.iso.serializeHttpHttpsOrigin
 import at.asitplus.iso.sha256
 import at.asitplus.openid.AuthenticationRequestParameters
 import at.asitplus.openid.OpenIdConstants
@@ -298,7 +298,7 @@ class DcApiVerifier @JvmOverloads constructor(
             ?: throw IllegalStateException("Expected ECDSA decryption key material")
 
         val encryptedResponseData = receivedData.response.encryptedResponseData
-        val serializedOrigin = expectedOrigin.serializeOrigin()
+        val serializedOrigin = expectedOrigin.serializeHttpHttpsOrigin()
             ?: throw IllegalStateException("Expected origin invalid")
 
         val sessionTranscript = createDcApiSessionTranscriptAnnexC(

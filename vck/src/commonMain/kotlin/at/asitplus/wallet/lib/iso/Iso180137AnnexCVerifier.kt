@@ -15,7 +15,7 @@ import at.asitplus.iso.DeviceResponse
 import at.asitplus.iso.EncryptionInfo
 import at.asitplus.iso.EncryptionParameters
 import at.asitplus.iso.SessionTranscript
-import at.asitplus.iso.serializeOrigin
+import at.asitplus.iso.serializeHttpHttpsOrigin
 import at.asitplus.iso.sha256
 import at.asitplus.signum.indispensable.CryptoPrivateKey
 import at.asitplus.signum.indispensable.SecretExposure
@@ -112,7 +112,7 @@ class Iso180137AnnexCVerifier @JvmOverloads constructor(
                 as? CryptoPrivateKey.EC.WithPublicKey ?: throw IllegalStateException("Expected EC private key")
 
         val encryptedResponseData = receivedData.response.encryptedResponseData
-        val serializedOrigin = expectedOrigin.serializeOrigin()
+        val serializedOrigin = expectedOrigin.serializeHttpHttpsOrigin()
             ?: throw IllegalStateException("Expected origin invalid")
 
         val sessionTranscript = createDcApiSessionTranscript(
