@@ -46,6 +46,7 @@ import kotlinx.coroutines.runBlocking
 val OpenId4VpDcApiProtocolTest by matrixSuite {
 
     val callingOrigin = "https://example.com"
+    val androidCallingOrigin = "android:apk-key-hash:AbCdEf"
     val callingPackageName = "com.example.app"
     val credentialId = "credential-1"
 
@@ -71,10 +72,12 @@ val OpenId4VpDcApiProtocolTest by matrixSuite {
                 )
             }
             object {
+                val allowedOriginSchemes = OpenId4VpHolder.DEFAULT_ALLOWED_DC_API_ORIGIN_SCHEMES.toMutableSet()
                 val holderOid4vp: OpenId4VpHolder = OpenId4VpHolder(
                     keyMaterial = holderKeyMaterial,
                     holder = holderAgent,
                     randomSource = RandomSource.Default,
+                    allowedDcApiOriginSchemes = { allowedOriginSchemes },
                 )
                 val dcApiHolder = DcApiHolder(
                     keyMaterial = holderKeyMaterial,
@@ -306,7 +309,7 @@ val OpenId4VpDcApiProtocolTest by matrixSuite {
                 .shouldBeInstanceOf<AuthenticationResponseResult.DcApi>()
                 .params.shouldBeInstanceOf<OpenId4VpResponseUnsigned>()
 
-            val validation = f.dcApiVerifier.validateAuthnResponse(response, transactionId).getOrThrow()
+            val validation = f.dcApiVerifier.validateAuthnResponse(response, transactionId, rpOrigin).getOrThrow()
                 .shouldBeInstanceOf<AuthnResponseResult>()
                 .vpTokenValidationResult!!.getOrThrow()
                 .shouldBeInstanceOf<VpTokenValidationResultDCQL>()
@@ -339,6 +342,35 @@ val OpenId4VpDcApiProtocolTest by matrixSuite {
 
             response.shouldBeInstanceOf<AuthenticationResponseResult.DcApi>()
                 .params.shouldBeInstanceOf<OpenId4VpResponseSigned>()
+        }
+
+        test("DC API signed: non-web origin validates and is used as the SD-JWT audience") { f ->
+            val transactionId = uuid4().toString()
+            val reqOptions = OpenId4VpRequestOptions(
+                presentationRequest = dcqlRequest,
+                responseMode = OpenIdConstants.ResponseMode.DcApi,
+                expectedOrigins = listOf(androidCallingOrigin),
+                state = transactionId,
+            )
+            val signedRequest = f.createSignedAuthnRequest(reqOptions)
+            val dcApiRequest = RequestParametersFrom.OpenId4VpDcApiSigned(
+                jwsTyped = signedRequest,
+                verified = false,
+                credentialIds = listOf(credentialId),
+                callingPackageName = callingPackageName,
+                callingOrigin = androidCallingOrigin,
+            )
+
+            val response = f.holderOid4vp.startAuthorizationResponsePreparation(dcApiRequest).getOrThrow()
+                .let { f.holderOid4vp.finalizeAuthorizationResponse(it).getOrThrow() }
+                .shouldBeInstanceOf<AuthenticationResponseResult.DcApi>()
+                .params.shouldBeInstanceOf<OpenId4VpResponseSigned>()
+
+            f.dcApiVerifier.validateAuthnResponse(response, transactionId, androidCallingOrigin).getOrThrow()
+                .shouldBeInstanceOf<AuthnResponseResult>()
+                .vpTokenValidationResult!!.getOrThrow()
+                .shouldBeInstanceOf<VpTokenValidationResultDCQL>()
+                .credentialQueryResponseValidations.values.single().single().getOrThrow()
         }
 
         test("DC API multisigned: parsed as DcApiMultiSigned, validates and responds with OpenId4VpResponseMultiSigned") { f ->
@@ -407,6 +439,69 @@ val OpenId4VpDcApiProtocolTest by matrixSuite {
             val result = f.holderOid4vp.startAuthorizationResponsePreparation(dcApiRequest)
             result.isFailure shouldBe true
             result.exceptionOrNull()!!.message!! shouldContain "expected_origins"
+        }
+
+        test("DC API signed: origins are compared as exact strings") { f ->
+            val reqOptions = OpenId4VpRequestOptions(
+                presentationRequest = dcqlRequest,
+                responseMode = OpenIdConstants.ResponseMode.DcApi,
+                expectedOrigins = listOf("https://example.com/"),
+            )
+            val signedRequest = f.createSignedAuthnRequest(reqOptions)
+            val dcApiRequest = RequestParametersFrom.OpenId4VpDcApiSigned(
+                jwsTyped = signedRequest,
+                verified = false,
+                credentialIds = listOf(credentialId),
+                callingPackageName = callingPackageName,
+                callingOrigin = callingOrigin,
+            )
+
+            val result = f.holderOid4vp.startAuthorizationResponsePreparation(dcApiRequest)
+
+            result.isFailure shouldBe true
+            result.exceptionOrNull()!!.message!! shouldContain "does not match expected_origins"
+        }
+
+        test("DC API signed: rejects a calling origin with a disallowed scheme") { f ->
+            val ftpOrigin = "ftp://example.com"
+            val reqOptions = OpenId4VpRequestOptions(
+                presentationRequest = dcqlRequest,
+                responseMode = OpenIdConstants.ResponseMode.DcApi,
+                expectedOrigins = listOf(ftpOrigin),
+            )
+            val signedRequest = f.createSignedAuthnRequest(reqOptions)
+            val dcApiRequest = RequestParametersFrom.OpenId4VpDcApiSigned(
+                jwsTyped = signedRequest,
+                verified = false,
+                credentialIds = listOf(credentialId),
+                callingPackageName = callingPackageName,
+                callingOrigin = ftpOrigin,
+            )
+
+            val result = f.holderOid4vp.startAuthorizationResponsePreparation(dcApiRequest)
+
+            result.isFailure shouldBe true
+            result.exceptionOrNull()!!.message!! shouldContain "disallowed scheme"
+        }
+
+        test("DC API signed: accepts a scheme added to the allowlist") { f ->
+            val httpOrigin = "http://localhost:8080"
+            f.allowedOriginSchemes += "http"
+            val reqOptions = OpenId4VpRequestOptions(
+                presentationRequest = dcqlRequest,
+                responseMode = OpenIdConstants.ResponseMode.DcApi,
+                expectedOrigins = listOf(httpOrigin),
+            )
+            val signedRequest = f.createSignedAuthnRequest(reqOptions)
+            val dcApiRequest = RequestParametersFrom.OpenId4VpDcApiSigned(
+                jwsTyped = signedRequest,
+                verified = false,
+                credentialIds = listOf(credentialId),
+                callingPackageName = callingPackageName,
+                callingOrigin = httpOrigin,
+            )
+
+            f.holderOid4vp.startAuthorizationResponsePreparation(dcApiRequest).getOrThrow()
         }
 
         test("DC API signed: rejects with InvalidRequest when expected_origins is missing") { f ->

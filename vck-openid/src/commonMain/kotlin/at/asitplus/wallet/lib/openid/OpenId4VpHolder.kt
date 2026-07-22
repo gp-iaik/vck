@@ -109,8 +109,23 @@ class OpenId4VpHolder @JvmOverloads constructor(
     /** Source for random bytes, i.e., nonces for encrypted responses. */
     private val randomSource: RandomSource = RandomSource.Secure,
     /** Callback to load encryption keys for pre-registered clients. */
-    private val lookupJsonWebKeysForClient: (JsonWebKeyLookupInput) -> JsonWebKeySet? = { null }
+    private val lookupJsonWebKeysForClient: (JsonWebKeyLookupInput) -> JsonWebKeySet? = { null },
+    /**
+     * Supplies the allowed schemes for origins received with OpenID4VP DC API requests.
+     * Values may be normal URI scheme names or a specific platform-origin prefix. The provider
+     * is invoked for every request so applications can update their policy at runtime.
+     */
+    private val allowedDcApiOriginSchemes: suspend () -> Set<String> = { DEFAULT_ALLOWED_DC_API_ORIGIN_SCHEMES },
 ) {
+
+    companion object {
+        const val HTTPS_ORIGIN_SCHEME = "https"
+        const val ANDROID_APK_KEY_HASH_ORIGIN_SCHEME = "android:apk-key-hash"
+        val DEFAULT_ALLOWED_DC_API_ORIGIN_SCHEMES: Set<String> = setOf(
+            HTTPS_ORIGIN_SCHEME,
+            ANDROID_APK_KEY_HASH_ORIGIN_SCHEME,
+        )
+    }
 
     data class JsonWebKeyLookupInput(
         val clientId: String?
@@ -120,7 +135,10 @@ class OpenId4VpHolder @JvmOverloads constructor(
         .mapNotNull { it.toJwsAlgorithm().getOrNull()?.identifier }
     private val supportedCoseAlgorithms = supportedAlgorithms
         .mapNotNull { it.toCoseAlgorithm().getOrNull()?.coseValue }
-    private val authorizationRequestValidator = AuthorizationRequestValidator(walletNonceMapStore)
+    private val authorizationRequestValidator = AuthorizationRequestValidator(
+        walletNonceMapStore = walletNonceMapStore,
+        allowedDcApiOriginSchemes = allowedDcApiOriginSchemes,
+    )
     private val authenticationResponseFactory = AuthenticationResponseFactory(
         encryptResponse = encryptJarm,
         randomSource = randomSource

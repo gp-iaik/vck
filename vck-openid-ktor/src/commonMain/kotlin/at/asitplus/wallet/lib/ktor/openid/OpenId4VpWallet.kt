@@ -51,6 +51,10 @@ class OpenId4VpWallet(
     holderAgent: HolderAgent,
     /** Source for random bytes, i.e., nonces for encrypted responses. */
     randomSource: RandomSource = RandomSource.Secure,
+    /** Supplies the allowed origin schemes for OpenID4VP DC API requests. */
+    allowedDcApiOriginSchemes: suspend () -> Set<String> = {
+        OpenId4VpHolder.DEFAULT_ALLOWED_DC_API_ORIGIN_SCHEMES
+    },
 ) {
 
     sealed interface AuthenticationResult
@@ -97,6 +101,7 @@ class OpenId4VpWallet(
         },
         randomSource = randomSource,
         requestObjectJwsVerifier = { _ -> true }, // unsure about this one?
+        allowedDcApiOriginSchemes = allowedDcApiOriginSchemes,
     )
 
     val iso180137AnnexCHolder = Iso180137AnnexCHolder(

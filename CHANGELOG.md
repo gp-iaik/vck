@@ -13,6 +13,8 @@ Release 7.0.0 (unreleased):
     - Import data classes and data element strings from credentials into this library for [EU PID](https://github.com/a-sit-plus/eu-pid-credential), [EU PID in SD-JWT](https://github.com/a-sit-plus/eu-pid-credential-sdjwt/) and [Mobile Driving Licence](https://github.com/a-sit-plus/mobile-driving-licence-credential/)
     - Document usage of remote metadata retrieval
 - OpenID for Verifiable Presentations:
+    - Compare signed DC API `expected_origins` values to the provided origin as exact strings and add a configurable holder-side origin-scheme allowlist.
+    - Support non-web Android Digital Credentials API origins starting with `android:apk-key-hash:<hash>` for OpenID4VP; ISO18013-7 mdoc presentations remain restricted to web origins.
     - Fix SD-JWT presentation validation for Digital Credentials API responses by checking the key binding JWT audience against the request origin (`origin:<origin>`) instead of the verifier client identifier.
     - Fix DCQL matching for credential queries without `claims`: selectively disclosable credentials now return an explicit mandatory-claims-only result, while non-selectively disclosable credentials still return all claims.
     - Fix disclosure of SD-JWT claims from foreign issuers: match disclosure digests against the originally serialized disclosures instead of re-serializing them, since digests are computed over the exact bytes (RFC 9901, section 4.2.3), e.g. failing for disclosures serialized with whitespace.
