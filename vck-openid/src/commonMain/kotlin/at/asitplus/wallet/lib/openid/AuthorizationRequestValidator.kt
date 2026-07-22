@@ -14,7 +14,6 @@ import at.asitplus.wallet.lib.oidvci.OAuth2Exception
 import at.asitplus.wallet.lib.oidvci.OAuth2Exception.InvalidRequest
 import at.asitplus.wallet.lib.utils.DefaultMapStore
 import at.asitplus.wallet.lib.utils.MapStore
-import io.github.aakira.napier.Napier
 import io.ktor.http.*
 import io.matthewnelson.encoding.core.Encoder.Companion.encodeToString
 import kotlin.coroutines.cancellation.CancellationException
@@ -73,15 +72,10 @@ internal class AuthorizationRequestValidator(
                     throw InvalidRequest("expected_origins must be set and non-empty for signed DC API request")
                 if (expectedOrigins.any { !it.usesAllowedOriginScheme(allowedSchemes) })
                     throw InvalidRequest("expected_origins contains an origin with a disallowed scheme")
-                if (!this.parameters.verifyExpectedOrigin(dcApiRequest.callingOrigin)) {
-                    Napier.w {
-                        "DC API calling origin '${dcApiRequest.callingOrigin}' does not match " +
-                            "expected_origins=$expectedOrigins"
-                    }
+                if (!this.parameters.verifyExpectedOrigin(dcApiRequest.callingOrigin))
                     throw InvalidRequest(
                         "calling origin '${dcApiRequest.callingOrigin}' does not match expected_origins"
                     )
-                }
             }
 
             is RequestParametersFrom.OpenId4VpDcApiUnsigned -> {
