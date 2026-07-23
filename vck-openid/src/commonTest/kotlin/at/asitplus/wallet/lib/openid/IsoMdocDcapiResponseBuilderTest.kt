@@ -9,7 +9,7 @@ import at.asitplus.iso.DeviceNameSpaces
 import at.asitplus.iso.DeviceSignedItem
 import at.asitplus.iso.DeviceSignedItemList
 import at.asitplus.iso.IssuerSignedItem
-import at.asitplus.iso.serializeHttpHttpsOrigin
+import at.asitplus.iso.serializeOrigin
 import at.asitplus.iso.sha256
 import at.asitplus.iso.wrapInCborTag
 import at.asitplus.openid.ClaimDescription
@@ -63,7 +63,7 @@ val IsoMdocDcapiResponseBuilderTest by matrixSuite {
                 hash = coseCompliantSerializer.encodeToByteArray(
                     DCAPIInfo(
                         encryptionInfo = fixture.walletRequest.parameters.isoMdocRequest.encryptionInfo,
-                        serializedOrigin = ORIGIN.serializeHttpHttpsOrigin() ?: error("Invalid origin")
+                        serializedOrigin = ORIGIN.serializeOrigin() ?: error("Invalid origin")
                     )
                 ).sha256()
             )

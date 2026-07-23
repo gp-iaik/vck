@@ -7,7 +7,7 @@ import at.asitplus.dcapi.EncryptedResponse
 import at.asitplus.dcapi.EncryptedResponseData
 import at.asitplus.iso.DeviceAuthentication
 import at.asitplus.iso.SessionTranscript
-import at.asitplus.iso.serializeHttpHttpsOrigin
+import at.asitplus.iso.serializeOrigin
 import at.asitplus.iso.sha256
 import at.asitplus.iso.wrapInCborTag
 import at.asitplus.openid.RequestParametersFrom
@@ -43,7 +43,7 @@ object IsoMdocDcapiResponseBuilder {
     /** Builds the DC API session transcript bound to the request encryption information and calling origin. */
     fun sessionTranscriptFor(isoMdocWalletRequest: RequestParametersFrom.IsoMdocDcApi): SessionTranscript {
         val isoMdocRequest = isoMdocWalletRequest.parameters.isoMdocRequest
-        val callingOrigin = isoMdocWalletRequest.callingOrigin.serializeHttpHttpsOrigin()
+        val callingOrigin = isoMdocWalletRequest.callingOrigin.serializeOrigin()
             ?: throw IllegalArgumentException("Invalid calling origin")
         val hash = coseCompliantSerializer.encodeToByteArray(
             DCAPIInfo(isoMdocRequest.encryptionInfo, callingOrigin)
@@ -63,7 +63,7 @@ object IsoMdocDcapiResponseBuilder {
     ): EncryptedResponse {
         val sessionTranscript = sessionTranscriptFor(isoMdocWalletRequest)
         val isoMdocRequest = isoMdocWalletRequest.parameters.isoMdocRequest
-        val callingOrigin = isoMdocWalletRequest.callingOrigin.serializeHttpHttpsOrigin()
+        val callingOrigin = isoMdocWalletRequest.callingOrigin.serializeOrigin()
             ?: throw IllegalArgumentException("Invalid calling origin")
 
         val presentationResult = holder.createPresentation(

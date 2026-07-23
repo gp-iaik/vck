@@ -231,7 +231,7 @@ val PresentationFactoryTest by matrixSuite {
             }
         }
 
-        "ISO mdoc rejects a non-web DC API origin" {
+        "ISO mdoc rejects an opaque DC API origin" {
             shouldThrow<IllegalArgumentException> {
                 it.presentationFactory.calcSessionTranscript(
                     nonce = "nonce",

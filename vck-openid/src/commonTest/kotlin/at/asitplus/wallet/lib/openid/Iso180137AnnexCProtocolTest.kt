@@ -16,7 +16,7 @@ import at.asitplus.iso.DocRequest
 import at.asitplus.iso.ItemsRequest
 import at.asitplus.iso.SingleItemsRequest
 import at.asitplus.iso.SessionTranscript
-import at.asitplus.iso.serializeHttpHttpsOrigin
+import at.asitplus.iso.serializeOrigin
 import at.asitplus.iso.sha256
 import at.asitplus.iso.wrapInCborTag
 import at.asitplus.openid.OpenIdConstants
@@ -298,7 +298,7 @@ private suspend fun createWalletResponse(
         DCAPIHandover(
             type = TYPE_DCAPI,
             hash = coseCompliantSerializer.encodeToByteArray(
-                DCAPIInfo(isoMdocRequest.encryptionInfo, origin.serializeHttpHttpsOrigin()!!)
+                DCAPIInfo(isoMdocRequest.encryptionInfo, origin.serializeOrigin()!!)
             ).sha256(),
         )
     )

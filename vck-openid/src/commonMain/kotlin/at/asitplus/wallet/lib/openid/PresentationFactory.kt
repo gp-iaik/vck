@@ -10,7 +10,7 @@ import at.asitplus.iso.DeviceNameSpaces
 import at.asitplus.iso.OpenId4VpHandover
 import at.asitplus.iso.OpenId4VpHandoverInfo
 import at.asitplus.iso.SessionTranscript
-import at.asitplus.iso.serializeHttpHttpsOrigin
+import at.asitplus.iso.serializeOrigin
 import at.asitplus.iso.sha256
 import at.asitplus.iso.wrapInCborTag
 import at.asitplus.openid.AuthenticationRequestParameters
@@ -156,8 +156,8 @@ internal class PresentationFactory(
         jsonWebKeys: Collection<JsonWebKey>?,
         responseWillBeEncrypted: Boolean
     ) = if (dcApiRequestCallingOrigin != null) {
-        val serializedOrigin = requireNotNull(dcApiRequestCallingOrigin.serializeHttpHttpsOrigin()) {
-            "ISO mdoc presentations currently require a web origin"
+        val serializedOrigin = requireNotNull(dcApiRequestCallingOrigin.serializeOrigin()) {
+            "ISO mdoc presentations require an authority-based origin"
         }
         SessionTranscript.forDcApi(
             DCAPIHandover(

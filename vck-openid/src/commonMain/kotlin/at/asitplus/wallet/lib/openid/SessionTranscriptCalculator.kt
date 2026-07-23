@@ -5,7 +5,7 @@ import at.asitplus.dcapi.OpenID4VPDCAPIHandoverInfo
 import at.asitplus.iso.OpenId4VpHandover
 import at.asitplus.iso.OpenId4VpHandoverInfo
 import at.asitplus.iso.SessionTranscript
-import at.asitplus.iso.serializeHttpHttpsOrigin
+import at.asitplus.iso.serializeOrigin
 import at.asitplus.iso.sha256
 import at.asitplus.openid.ResponseParametersFrom
 import at.asitplus.signum.indispensable.cosef.io.coseCompliantSerializer
@@ -82,7 +82,7 @@ internal class DcApiSessionTranscriptCalculator(
             "Unsupported response mechanism: ${input.originalResponseParameters}"
         }
         require(origin != null) { "Missing required parameter: origin" }
-        val serializedOrigin = requireNotNull(origin.serializeHttpHttpsOrigin()) {
+        val serializedOrigin = requireNotNull(origin.serializeOrigin()) {
             "Invalid parameter: origin"
         }
         return SessionTranscript.forDcApi(

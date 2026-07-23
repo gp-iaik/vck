@@ -32,6 +32,7 @@ kotlin {
                 api(project(":dif-data-classes"))
                 api(project(":csc-data-classes"))
                 api(ktor("http"))
+                implementation(project(":rfc3986-uri-syntax"))
                 implementation(napier())
                 commonImplementationAndApiDependencies()
             }
