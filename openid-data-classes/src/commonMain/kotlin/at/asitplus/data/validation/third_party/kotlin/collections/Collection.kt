@@ -6,6 +6,8 @@ fun <T> kotlin.collections.Collection<T>.requireIsNotEmpty() {
 }
 
 @Throws(IllegalArgumentException::class)
-fun <T> kotlin.collections.Collection<T>?.requireIsNotNullOrEmpty() {
-    require(!isNullOrEmpty()) { "Collection must neither be null nor empty." }
+inline fun <T> kotlin.collections.Collection<T>?.requireIsNotNullOrEmpty(
+    lazyMessage: () -> Any = { "Collection must neither be null nor empty." },
+) {
+    require(!isNullOrEmpty(), lazyMessage)
 }

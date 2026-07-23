@@ -79,8 +79,8 @@ internal class AuthorizationRequestValidator(
             }
 
             is RequestParametersFrom.OpenId4VpDcApiUnsigned -> {
-                // Nothing to validate: the Wallet authenticates the client through the calling Origin,
-                // and any client_id present in an unsigned request is ignored (not used for authentication). TODO is this true?
+                // Nothing to validate: the Wallet authenticates the client through the platform-provided calling origin,
+                // and any client_id present in an unsigned request is ignored (not used for authentication).
             }
 
             else -> throw InvalidRequest("DC API request not set even though response mode is ${parameters.responseMode}")

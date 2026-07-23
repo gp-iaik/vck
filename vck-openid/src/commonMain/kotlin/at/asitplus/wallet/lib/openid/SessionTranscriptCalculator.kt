@@ -83,7 +83,7 @@ internal class DcApiSessionTranscriptCalculator(
         }
         require(origin != null) { "Missing required parameter: origin" }
         val serializedOrigin = requireNotNull(origin.serializeOrigin()) {
-            "Invalid parameter: origin"
+            "Invalid parameter: origin ($origin)"
         }
         return SessionTranscript.forDcApi(
             DCAPIHandover(
