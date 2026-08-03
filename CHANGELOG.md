@@ -5,6 +5,8 @@ Release 7.0.1 (unreleased):
     - Normalize decoded RFC 5646 language tags to lowercase instead of rejecting non-lowercase input
 - Credentials:
     - Derive SD-JWT Digital Credentials API identifiers from the JWT ID or serialized credential instead of the subject
+- OpenID for Verifiable Presentations:
+    - Match non-fully specified COSE algorithms with fully specified ones
 
 Release 7.0.0:
 - Credential definitions:

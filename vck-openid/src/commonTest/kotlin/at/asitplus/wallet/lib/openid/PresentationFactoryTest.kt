@@ -1,6 +1,7 @@
 package at.asitplus.wallet.lib.openid
 
 import at.asitplus.dif.ClaimFormat
+import at.asitplus.openid.SupportedAlgorithmsContainerIso
 import at.asitplus.openid.VpFormatsSupported
 import at.asitplus.signum.indispensable.SignatureAlgorithm
 import at.asitplus.signum.indispensable.cosef.CoseAlgorithm
@@ -103,6 +104,19 @@ val PresentationFactoryTest by matrixSuite {
                 supportedJwsAlgorithms = listOf(),
                 supportedCoseAlgorithms = listOf(),
             ) shouldBe false
+        }
+
+        "fully-specified COSE algorithm matches its legacy equivalent" {
+            VpFormatsSupported(
+                msoMdoc = SupportedAlgorithmsContainerIso(
+                    issuerAuthAlgorithmInts = setOf(CoseAlgorithm.Signature.ESP256.coseValue),
+                    deviceAuthAlgorithmInts = setOf(CoseAlgorithm.Signature.ESP256.coseValue),
+                )
+            ).supportsAlgorithm(
+                claimFormat = ClaimFormat.MSO_MDOC,
+                supportedJwsAlgorithms = emptyList(),
+                supportedCoseAlgorithms = listOf(CoseAlgorithm.Signature.ES256),
+            ) shouldBe true
         }
 
         "empty vp_formats_supported not matching" {

@@ -268,13 +268,23 @@ internal fun VpFormatsSupported.supportsAlgorithm(
     ClaimFormat.MSO_MDOC -> msoMdoc?.let { msoMdoc ->
         var result = true // empty object is fine
         msoMdoc.issuerAuthAlgorithms?.let {
-            result = result and it.any { supportedCoseAlgorithms.contains(it) }
+            result = result and it.any { it.matchesAny(supportedCoseAlgorithms) }
         }
         msoMdoc.deviceAuthAlgorithms?.let {
-            result = result and it.any { supportedCoseAlgorithms.contains(it) }
+            result = result and it.any { it.matchesAny(supportedCoseAlgorithms) }
         }
         result
     } ?: false
 
     else -> false
+}
+
+private fun CoseAlgorithm.matchesAny(algorithms: Collection<CoseAlgorithm.Signature>) =
+    this is CoseAlgorithm.Signature && algorithms.any { it.legacyEquivalent() == legacyEquivalent() }
+
+private fun CoseAlgorithm.Signature.legacyEquivalent() = when (this) {
+    CoseAlgorithm.Signature.ESP256 -> CoseAlgorithm.Signature.ES256
+    CoseAlgorithm.Signature.ESP384 -> CoseAlgorithm.Signature.ES384
+    CoseAlgorithm.Signature.ESP512 -> CoseAlgorithm.Signature.ES512
+    else -> this
 }
