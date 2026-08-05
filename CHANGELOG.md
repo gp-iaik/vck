@@ -1,5 +1,9 @@
 # Changelog
 
+Release 7.0.1 (unreleased):
+- ETSI data classes:
+    - Normalize decoded RFC 5646 language tags to lowercase instead of rejecting non-lowercase input
+
 Release 7.0.0:
 - Credential definitions:
     - Move `CredentialScheme` out of `ConstantIndex`
