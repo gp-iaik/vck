@@ -3,6 +3,7 @@
 Release 8.0.0 (unreleased):
 - Credentials:
     - In `SubjectCredentialStore.StoreEntry` make the `schemeIdentifier` non-nullable. Deserialization of old previously stored entries need to be handled by calling applications.
+    - Derive SD-JWT Digital Credentials API identifiers from the JWT ID or serialized credential instead of the subject
 - OpenID for Verifiable Presentations:
     - Remove support for Presentation Exchange, since OpenID4VP 1.0 only supports DCQL
     - Implement direct presentation requests and responses according to ISO 18013-5 Device Retrieval with new subtypes `CredentialPresentationRequest.IsoDeviceRetrieval`, `CredentialPresentation.IsoDeviceRetrievalPresentation`, `IsoDeviceRetrievalMatchingResult` for `CredentialMatchingResult`, `HolderIsoDeviceRetrievalQueryMatchingResult` for `HolderPresentationRequestMatchingResult`, and `PresentationResponseParameters.DeviceRetrievalParameters`
