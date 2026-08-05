@@ -37,6 +37,14 @@ Release 8.0.0 (unreleased):
     - Note that neither builds a certificate path to a trust anchor, they compare public keys
     - In `ValidatorSdJwt.verifyVpSdJwt()` reject presentations whose SD-JWT carries no `cnf`: the key binding JWT used to be verified against a key asserted in its own header in that case, which proves nothing about the holder
     - Delegate ISO mDoc device authentication calculation directly to the holder during OpenID4VP and DCAPI presentation creation
+- Trusted issuers:
+    - Add `TrustedIssuerCertificates`, supplying the certificates of the issuers to trust, e.g. extracted from an ETSI trust list with `LoTEFilterService`
+    - Add `VerifyJwsObjectTrustedCertificate` and `VerifyCoseSignatureTrustedCertificate`, requiring the certificate transported with a credential to be signed by one of the trusted issuer certificates, reusing `X509Certificate.isTrustedBy()`. Both certificates have to be valid at the time of verification. No certificate path is built, and `keyUsage` and `basicConstraints` are not evaluated
+    - The certificate of the trust anchor must be known out-of-band, so no trusted certificate may be transported with the credential, and the signing certificate must not be self-signed. One case is exempt from both rules: a chain consisting of exactly one self-signed certificate that is itself trusted, i.e. an issuer whose own certificate is trusted directly
+    - Add a `trustedIssuers` parameter to `VerifierAgent` and `HolderAgent`, which builds validators enforcing it for issuer signatures on SD-JWT, VC-JWS and mdoc credentials. It is declared before the validator parameters, so positional arguments after `identifier` resp. `validator` shift. Holder signatures, i.e. presentations and key binding, are self-asserted by design and stay unaffected
+    - Use `issuerJwsVerifier()` and `issuerCoseVerifier()` to wire it into validators directly, and pass `VerifyJwsObjectTrustedCertificate` as `verifyJwsObjectIntegrity` of `TokenStatusResolverImpl` resp. as `verifyJwsObject` of `ClientAuthenticationService` for status list tokens and client attestations, which are separate trust domains
+    - In `VerifyStatusListTokenHAIP` implement the certificate check that used to be a `TODO()`, which threw `NotImplementedError` as soon as a trust store was supplied. Replace `trustStoreLookup` with `trustedIssuers`, and deprecate the now unused `TrustStoreLookup`
+    - In `VerifyStatusListTokenHAIP` fix the check that the signing certificate must not be self-signed: it verified the certificate signature over the signature bytes instead of the TBS certificate, so it never failed. Status list tokens signed with a self-signed certificate are now rejected, as HAIP requires
 - Deprecations:
     - Remove code deprecated in 7.0.0, e.g. various `Iso180137AnnexC*` and related classes
     - Deprecate all classes used for Presentation Exchange requests and so on, e.g., `CredentialPresentationRequest.PresentationExchangeRequest` or `PresentationExchangeCredentialDisclosure` or `CredentialPresentation.PresentationExchangePresentation`
@@ -48,7 +56,11 @@ Release 8.0.0 (unreleased):
     - Deprecate `PresentationRequestParameters.calcIsoDeviceSignaturePlain` in favor of computing device signatures automatically via `calcIsoSessionTranscript`
     - Deprecate the `NonceChallengeVerifier.createPresentationRequest()` overload accepting `calcIsoDeviceSignaturePlain`
     - Deprecate `signDeviceAuthDetached` parameter in `buildEncryptedResponse()`, `OpenId4VpHolder`, and `Iso180137AnnexCHolder`, as device authentication signature functions are now managed internally by the holder
+    - Deprecate `TrustStoreLookup`, as trusted certificates are not selected per signed object, replaced by `TrustedIssuerCertificates`
+    - Deprecate `ClientAuthenticationService.verifyClientAttestationJwt`, which never validated the `x5c` it required; pass `VerifyJwsObjectTrustedCertificate` with the trusted wallet provider certificates as `verifyJwsObject` instead
 - Refactorings:
+    - In `MdocInputValidator` and `ValidatorMdoc` replace `verifyCoseSignatureWithKey` with a `VerifyCoseSignatureFun<MobileSecurityObject>`, which resolves the issuer key from the COSE headers itself. Consequently `MdocInputValidator.invoke()` and `ValidatorMdoc.verifyIsoCred()` lose their `issuerKey` parameter, `MdocInputValidationSummary.IntegrityValidationSummary.IntegrityValidationResult` loses its `issuerKey` property, and `IntegrityNotValidated` is removed
+    - `ValidatorMdoc.verifyDocument()` no longer extracts the issuer certificate itself, but delegates to `MdocInputValidator` like the credential path does
     - In ISO data classes like `DeviceResponse`, `DeviceRequest`, `MobileSecurityObject` replace the String `version` with a typed `parsedVersion` from [kotlin-semver](https://github.com/z4kn4fein/kotlin-semver)
     - In ISO data class `MobileSecurityObject` replace the String `digestAlgorithm` with a typed `digest` from Signum
     - In `CredentialToBeIssued.Iso` add a property to specify the digest algorithm to be used in the MSO
