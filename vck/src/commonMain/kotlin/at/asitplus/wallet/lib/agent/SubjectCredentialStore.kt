@@ -164,7 +164,6 @@ interface SubjectCredentialStore {
         fun getDcApiId(): String = when (this) {
             is Vc -> vc.jwtId
             is SdJwt -> sdJwt.jwtId
-                ?: sdJwt.subject
                 ?: joseCompliantSerializer.encodeToString(sdJwt).toByteArray().sha256().toHexString()
 
             is Iso -> coseCompliantSerializer.encodeToByteArray(issuerSigned).sha256().toHexString()
