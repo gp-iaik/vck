@@ -1,6 +1,8 @@
 # Changelog
 
 Release 8.0.0 (unreleased):
+- ETSI data classes:
+    - Normalize decoded RFC 5646 language tags to lowercase instead of rejecting non-lowercase input
 - Credentials:
     - In `SubjectCredentialStore.StoreEntry` make the `schemeIdentifier` non-nullable. Deserialization of old previously stored entries need to be handled by calling applications.
 - OpenID for Verifiable Presentations:
