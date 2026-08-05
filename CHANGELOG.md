@@ -3,6 +3,8 @@
 Release 7.0.1 (unreleased):
 - ETSI data classes:
     - Normalize decoded RFC 5646 language tags to lowercase instead of rejecting non-lowercase input
+- Credentials:
+    - Derive SD-JWT Digital Credentials API identifiers from the JWT ID or serialized credential instead of the subject
 
 Release 7.0.0:
 - Credential definitions:
