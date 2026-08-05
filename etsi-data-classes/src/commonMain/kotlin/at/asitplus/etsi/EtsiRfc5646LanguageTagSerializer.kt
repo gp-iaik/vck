@@ -1,5 +1,6 @@
 package at.asitplus.etsi
 
+import io.github.aakira.napier.Napier
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.descriptors.PrimitiveKind
 import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
@@ -22,9 +23,11 @@ class EtsiRfc5646LanguageTagSerializer : KSerializer<Rfc5646LanguageTag> {
     }
 
     override fun deserialize(decoder: Decoder) = Rfc5646LanguageTag(
-        decoder.decodeString().also {
-            require(it.lowercase() == it) {
-                "Expected language tag to be lowercase for ETSI compliance, but was $it"
+        decoder.decodeString().let { decodedLanguageTag ->
+            decodedLanguageTag.lowercase().also { normalizedLanguageTag ->
+                if (normalizedLanguageTag != decodedLanguageTag) {
+                    Napier.w("Expected language tag to be lowercase for ETSI compliance, but was $decodedLanguageTag")
+                }
             }
         }
     )
