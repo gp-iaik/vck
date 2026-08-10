@@ -2,15 +2,21 @@ package at.asitplus.wallet.lib.oauth2
 
 import at.asitplus.KmmResult
 import at.asitplus.catching
+import at.asitplus.openid.OAuth2AuthorizationServerMetadata
+import at.asitplus.openid.OpenIdConstants
+import at.asitplus.openid.OpenIdConstants.AUTH_METHOD_ATTEST_JWT_CLIENT_AUTH
 import at.asitplus.signum.indispensable.josef.JsonWebToken
 import at.asitplus.signum.indispensable.josef.JwsAlgorithm
 import at.asitplus.signum.indispensable.josef.JwsCompactTyped
+import at.asitplus.wallet.lib.DefaultNonceService
+import at.asitplus.wallet.lib.NonceService
 import at.asitplus.wallet.lib.etsi.Success
 import at.asitplus.wallet.lib.jws.JwsContentTypeConstants
 import at.asitplus.wallet.lib.jws.VerifyJwsObject
 import at.asitplus.wallet.lib.jws.VerifyJwsObjectFun
 import at.asitplus.wallet.lib.jws.VerifyJwsSignatureWithCnf
 import at.asitplus.wallet.lib.jws.VerifyJwsSignatureWithCnfFun
+import at.asitplus.wallet.lib.oauth2.SimpleAuthorizationService.Companion.DEFAULT_WALLET_ATTESTATION_ALGORITHMS
 import at.asitplus.wallet.lib.oidvci.OAuth2Exception.InvalidClient
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.jvm.JvmOverloads
@@ -50,9 +56,24 @@ class AttestationBasedClientAuthenticationService @JvmOverloads constructor(
     private val timeLeeway: Duration = 5.minutes,
     /** Identifier of this authorization server, to verify `aud` of incoming PoP JWTs. */
     private val issuerIdentifier: String? = null,
+    /** Used for [OAuth2AuthorizationServerMetadata.clientAttestationSigningAlgValuesSupportedStrings] */
+    private val supportedSigningAlgorithms: Set<JwsAlgorithm.Signature> = DEFAULT_WALLET_ATTESTATION_ALGORITHMS,
+    /** Service used to create challenges for the clients to use in PoP JWT. */
+    private val nonceService: NonceService = DefaultNonceService(),
 ) : ClientAuthenticationService {
+    override val supportedAuthMethods: Set<String>
+        get() = setOf(AUTH_METHOD_ATTEST_JWT_CLIENT_AUTH)
 
-    // TODO Add challenge service here
+    override val supportedPopSigningAlgs: Set<String>
+        get() = supportedSigningAlgorithms.map { it.identifier }.toSet()
+
+    override val supportedSigningAlgs: Set<String>
+        get() = supportedSigningAlgorithms.map { it.identifier }.toSet()
+
+    override val supportedPopMethods: Set<OpenIdConstants.ClientAttestationPopMethod>
+        get() = setOf(OpenIdConstants.ClientAttestationPopMethod.None)
+
+    override suspend fun getAttestationChallenge(): String = nonceService.provideNonce()
 
     /**
      * Authenticates the client as defined from a client attestation JWT.
@@ -97,7 +118,7 @@ class AttestationBasedClientAuthenticationService @JvmOverloads constructor(
             throw InvalidClient("client attestation has no x5c")
         }
         if (jws.jwsHeader.algorithm !is JwsAlgorithm.Signature ||
-            jws.jwsHeader.algorithm !in SimpleAuthorizationService.DEFAULT_WALLET_ATTESTATION_ALGORITHMS
+            jws.jwsHeader.algorithm !in supportedSigningAlgorithms
         ) {
             throw InvalidClient("unsupported client attestation alg: ${jws.jwsHeader.algorithm}")
         }
@@ -140,12 +161,12 @@ class AttestationBasedClientAuthenticationService @JvmOverloads constructor(
         }
     }
 
-    private fun JwsCompactTyped<JsonWebToken>.validateWalletInstanceAttestationPop(clientId: String?) {
+    private suspend fun JwsCompactTyped<JsonWebToken>.validateWalletInstanceAttestationPop(clientId: String?) {
         if (jws.jwsHeader.type != JwsContentTypeConstants.CLIENT_ATTESTATION_POP_JWT) {
             throw InvalidClient("invalid client attestation PoP typ: ${jws.jwsHeader.type}")
         }
         if (jws.jwsHeader.algorithm !is JwsAlgorithm.Signature ||
-            jws.jwsHeader.algorithm !in SimpleAuthorizationService.DEFAULT_WALLET_ATTESTATION_ALGORITHMS
+            jws.jwsHeader.algorithm !in supportedSigningAlgorithms
         ) {
             throw InvalidClient("unsupported client attestation PoP alg: ${jws.jwsHeader.algorithm}")
         }
@@ -163,8 +184,19 @@ class AttestationBasedClientAuthenticationService @JvmOverloads constructor(
         if (payload.expiration == null || payload.expiration!! < (clock.now() - timeLeeway)) {
             throw InvalidClient("client attestation PoP expired: ${payload.expiration}")
         }
+        if (payload.nonce == null && payload.challenge == null) {
+            throw InvalidClient("client attestation PoP missing challenge/nonce")
+        }
+        payload.nonce?.let { nonce ->
+            if (!nonceService.verifyAndRemoveNonce(nonce)) {
+                throw InvalidClient("client attestation PoP invalid nonce")
+            }
+        } ?: payload.challenge?.let { challenge ->
+            if (!nonceService.verifyAndRemoveNonce(challenge)) {
+                throw InvalidClient("client attestation PoP invalid challenge")
+            }
+        } ?: throw InvalidClient("client attestation PoP missing challenge")
         // TODO Verify other fields
-        // TODO Need to verify challenge
         // TODO Validate signature against CNF key
     }
 

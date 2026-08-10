@@ -363,7 +363,13 @@ data class OAuth2AuthorizationServerMetadata(
     @SerialName("code_challenge_methods_supported")
     val codeChallengeMethodsSupported: Set<String>? = null,
 
-    // TODO Support for challenge endpoint and pop methods
+    /**
+     * URL of the authorization server's challenge endpoint which is used to obtain a fresh challenge for usage in
+     * client authentication methods such as client attestation. See
+     * [OAuth2.0 Attestation-Based Client Authentication](https://www.ietf.org/archive/id/draft-ietf-oauth-attestation-based-client-auth-10.html#name-oauth-authorization-server-)
+     */
+    @SerialName("challenge_endpoint")
+    val challengeEndpoint: String? = null,
 
     /**
      * The Authorization Server SHOULD communicate supported algorithms for client attestations by using
@@ -394,6 +400,20 @@ data class OAuth2AuthorizationServerMetadata(
      */
     @SerialName("client_attestation_signing_alg_values_supported")
     val clientAttestationSigningAlgValuesSupportedStrings: Set<String>? = null,
+
+    /**
+     * OAuth2.0 Attestation-Based Client Authentication registers the following Proof of Possession methods:
+     * * `attestation_pop_jwt`: The Proof of Possession is a dedicated Client Attestation PoP JWT as defined in
+     * Section 5.1 ("normal mode").
+     * * `dpop_combined`: The Proof of Possession is a DPoP proof serving as the combined Proof of Possession as
+     * defined in Section 5.2 ("DPoP combined mode").
+     * * `none`: No Client Attestation is required. A server includes this value to signal that the Client MAY omit
+     * the Client Attestation.
+     * See
+     * [OAuth 2.0 Attestation-Based Client Authentication](https://www.ietf.org/archive/id/draft-ietf-oauth-attestation-based-client-auth-10.html#name-client-attestation-as-an-ad)
+     */
+    @SerialName("client_attestation_pop_methods_supported")
+    val clientAttestationPopMethodsSupported: Set<OpenIdConstants.ClientAttestationPopMethod>? = null,
 ) {
 
     /**

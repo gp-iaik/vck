@@ -4,6 +4,7 @@ import at.asitplus.KmmResult
 import at.asitplus.catching
 import at.asitplus.catchingUnwrapped
 import at.asitplus.iso.sha256
+import at.asitplus.openid.AttestationChallengeResponse
 import at.asitplus.openid.AuthenticationRequestParameters
 import at.asitplus.openid.AuthenticationResponseParameters
 import at.asitplus.openid.AuthorizationDetails
@@ -16,7 +17,6 @@ import at.asitplus.openid.JarRequestParameters
 import at.asitplus.openid.OAuth2AuthorizationServerMetadata
 import at.asitplus.openid.OidcUserInfoExtended
 import at.asitplus.openid.OpenIdConstants
-import at.asitplus.openid.OpenIdConstants.AUTH_METHOD_ATTEST_JWT_CLIENT_AUTH
 import at.asitplus.openid.PushedAuthenticationResponseParameters
 import at.asitplus.openid.RequestObjectParameters
 import at.asitplus.openid.RequestParameters
@@ -112,7 +112,11 @@ class SimpleAuthorizationService @JvmOverloads constructor(
      * requests to that URI (which starts with [publicContext]) to [getTokenInfo].
      */
     private val introspectionEndpointPath: String = "/introspect",
-    // TODO Add challenge endpoint path for Attestation-Based Client Auth
+    /**
+     * Used to build [OAuth2AuthorizationServerMetadata.challengeEndpointUrl], i.e. implementers need to forward requests
+     * to that URI (which starts with [publicContext]) to [challenge].
+     */
+    private val challengeEndpointPath: String = "/challenge",
     /** Associates issuer_state with credential offers. */
     private val issuerStateToCredentialOffer: MapStore<String, CredentialOffer> = DefaultMapStore(),
     /** Associates issued codes with the auth request from the client. */
@@ -168,13 +172,14 @@ class SimpleAuthorizationService @JvmOverloads constructor(
             pushedAuthorizationRequestEndpoint = "$publicContext$pushedAuthorizationRequestEndpointPath",
             userInfoEndpoint = "$publicContext$userInfoEndpointPath",
             introspectionEndpoint = "$publicContext$introspectionEndpointPath",
-            introspectionEndpointAuthMethodsSupported = setOf(AUTH_METHOD_ATTEST_JWT_CLIENT_AUTH),
+            challengeEndpoint = clientAuthenticationService.supportedAuthMethods.takeIf { it != null }
+                ?.let { "$publicContext$challengeEndpointPath" },
             requirePushedAuthorizationRequests = requirePushedAuthorizationRequests,
-            tokenEndPointAuthMethodsSupported = setOf(AUTH_METHOD_ATTEST_JWT_CLIENT_AUTH), // per OID4VC HAIP
-            clientAttestationSigningAlgValuesSupportedStrings = supportedSigningAlgorithms
-                .map { it.identifier }.toSet(),
-            clientAttestationPopSigningAlgValuesSupportedStrings = supportedSigningAlgorithms
-                .map { it.identifier }.toSet(),
+            introspectionEndpointAuthMethodsSupported = clientAuthenticationService.supportedAuthMethods,
+            tokenEndPointAuthMethodsSupported = clientAuthenticationService.supportedAuthMethods,
+            clientAttestationSigningAlgValuesSupportedStrings = clientAuthenticationService.supportedSigningAlgs,
+            clientAttestationPopSigningAlgValuesSupportedStrings = clientAuthenticationService.supportedPopSigningAlgs,
+            clientAttestationPopMethodsSupported = clientAuthenticationService.supportedPopMethods,
             dpopSigningAlgValuesSupportedStrings = tokenService.dpopSigningAlgValuesSupportedStrings,
             requestObjectSigningAlgorithmsSupportedStrings = requestObjectSigningAlgorithms
                 ?.map { it.identifier }?.toSet(),
@@ -194,6 +199,16 @@ class SimpleAuthorizationService @JvmOverloads constructor(
      * see [OpenIdConstants.WellKnownPaths.OauthAuthorizationServer].
      */
     override suspend fun metadata(): OAuth2AuthorizationServerMetadata = _metadata
+
+    /**
+     * MUST be delivered with HTTP header `Cache-Control: no-store` (see [io.ktor.http.HttpHeaders.CacheControl]).
+     * Serialize the body as JSON.
+     * See
+     * [OAuth 2.0 Attestation-Based Client Authentication](https://www.ietf.org/archive/id/draft-ietf-oauth-attestation-based-client-auth-10.html#name-challenges)
+     */
+    suspend fun attestationChallenge() = clientAuthenticationService.getAttestationChallenge()?.let {
+        AttestationChallengeResponse(attestationChallenge = it)
+    }
 
     /**
      * Offer some credential identifiers from [strategy] to clients with auth-code flow.
@@ -301,6 +316,7 @@ class SimpleAuthorizationService @JvmOverloads constructor(
     ) = catching {
         val actualRequest = request.extractPushedRequestParams()
         Napier.i("par called with $actualRequest")
+        // TODO bind PAR request state, authorization codes and refresh tokens to the authenticated key
         clientAuthenticationService.authenticateClient(httpRequest, actualRequest.clientId)
         // PAR stores the request for later authorization. issuer_state is single-use and must only be consumed
         // when /authorize is executed with the referenced request_uri.

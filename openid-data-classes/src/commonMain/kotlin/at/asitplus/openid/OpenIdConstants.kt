@@ -122,6 +122,7 @@ object OpenIdConstants {
     object ProofTypes {
         /** `jwt` */
         const val JWT = "jwt"
+
         /** `attestation` */
         const val ATTESTATION = "attestation"
     }
@@ -394,6 +395,70 @@ object OpenIdConstants {
      */
     object VerifierInfo {
         const val REGISTRATION_CERT_FORMAT = "registration_cert"
+    }
+
+
+    /**
+     * See
+     * [OAuth 2.0 Attestation-Based Client Authentication](https://www.ietf.org/archive/id/draft-ietf-oauth-attestation-based-client-auth-10.html#name-client-attestation-as-an-ad)
+     */
+    @Serializable(with = ClientAttestationPopMethod.Serializer::class)
+    sealed class ClientAttestationPopMethod(
+        val stringRepresentation: String
+    ) {
+        /**
+         * The Proof of Possession is a dedicated Client Attestation PoP JWT as defined in
+         * Section 5.1 ("normal mode").
+         */
+        object AttestationPopJwt : ClientAttestationPopMethod(STRING_ATTESTATION_POP_JWT)
+
+        /**
+         * The Proof of Possession is a DPoP proof serving as the combined Proof of Possession as defined in
+         * Section 5.2 ("DPoP combined mode").
+         */
+        object DpopCombined : ClientAttestationPopMethod(STRING_DPOP_COMBINED)
+
+        /**
+         * No Client Attestation is required. A server includes this value to signal that the Client MAY omit the
+         * Client Attestation.
+         */
+        object None : ClientAttestationPopMethod(STRING_NONE)
+
+        /**
+         * Any not natively supported PoP method, so it can still be parsed
+         */
+        class Other(stringRepresentation: String) : ClientAttestationPopMethod(stringRepresentation)
+
+        companion object {
+            private const val STRING_ATTESTATION_POP_JWT = "attestation_pop_jwt"
+            private const val STRING_DPOP_COMBINED = "dpop_combined"
+            private const val STRING_NONE = "none"
+
+            val entries by lazy {
+                setOf(
+                    AttestationPopJwt,
+                    DpopCombined,
+                    None
+                )
+            }
+        }
+
+        object Serializer : KSerializer<ClientAttestationPopMethod> {
+            override val descriptor: SerialDescriptor =
+                PrimitiveSerialDescriptor("ClientAttestationPopMethod", PrimitiveKind.STRING)
+
+            override fun deserialize(decoder: Decoder): ClientAttestationPopMethod =
+                when (val string = decoder.decodeString()) {
+                    STRING_ATTESTATION_POP_JWT -> AttestationPopJwt
+                    STRING_DPOP_COMBINED -> DpopCombined
+                    STRING_NONE -> None
+                    else -> Other(string)
+                }
+
+            override fun serialize(encoder: Encoder, value: ClientAttestationPopMethod) {
+                encoder.encodeString(value.stringRepresentation)
+            }
+        }
     }
 
     /**
