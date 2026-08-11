@@ -18,6 +18,7 @@ import at.asitplus.wallet.lib.jws.VerifyJwsObject
 import at.asitplus.wallet.lib.jws.VerifyJwsObjectFun
 import at.asitplus.wallet.lib.jws.VerifyJwsSignatureWithKey
 import at.asitplus.wallet.lib.jws.VerifyJwsSignatureWithKeyFun
+import at.asitplus.wallet.lib.oauth2.TokenService.Companion.jwt
 import at.asitplus.wallet.lib.oidvci.OAuth2Exception.*
 import at.asitplus.wallet.lib.oidvci.TokenInfo
 import io.matthewnelson.encoding.core.Encoder.Companion.encodeToString
@@ -135,15 +136,8 @@ class JwtTokenVerificationService(
         if (!dpopNonceService.verifyAndRemoveNonce(nonce)) {
             throw UseDpopNonce(dpopNonceService.provideNonce(), "DPoP JWT nonce not valid: $nonce")
         }
-        if (dpopProof.payload.httpTargetUrl != httpRequest.url) {
-            throw InvalidDpopProof("DPoP JWT htu incorrect: ${dpopProof.payload.httpTargetUrl}")
-        }
-        if (dpopProof.payload.httpMethod != httpRequest.method.value.uppercase()) {
-            throw InvalidDpopProof("DPoP JWT htm incorrect: ${dpopProof.payload.httpMethod}")
-        }
         dpopProof.jws.jwsHeader.jsonWebKey
             ?: throw InvalidDpopProof("DPoP JWT contains no public key")
-
     }
 
     private suspend fun verifyDpopProof(
@@ -152,6 +146,23 @@ class JwtTokenVerificationService(
         verifyJwsObject(it.jws).getOrElse { throw InvalidDpopProof("DPoP JWT not verified.", it) }
         if (it.jws.jwsHeader.type != JwsContentTypeConstants.DPOP_JWT) {
             throw InvalidDpopProof("invalid type: ${it.jws.jwsHeader.type}")
+        }
+        if (it.jws.jwsHeader.jsonWebKey == null) {
+            throw InvalidDpopProof("DPoP JWT contains no public key")
+        }
+        if (it.payload.httpTargetUrl != httpRequest.url) {
+            throw InvalidDpopProof("DPoP JWT htu incorrect: ${it.payload.httpTargetUrl}")
+        }
+        if (it.payload.httpMethod != httpRequest.method.value.uppercase()) {
+            throw InvalidDpopProof("DPoP JWT htm incorrect: ${it.payload.httpMethod}")
+        }
+        if (it.payload.jwtId == null) {
+            throw InvalidDpopProof("DPoP JWT contains no jwtId")
+        }
+        if (it.payload.issuedAt == null) {
+            throw InvalidDpopProof("DPoP JWT contains no issuedAt")
+        } else if (it.payload.issuedAt!! > (clock.now() + timeLeeway)) {
+            throw InvalidDpopProof("DPoP JWT issuedAt in future: ${it.payload.issuedAt}")
         }
     } ?: throw InvalidDpopProof("no dpop proof in header")
 
@@ -172,6 +183,7 @@ class JwtTokenVerificationService(
             throw InvalidDpopProof("DPoP JWT JWK not matching cnf.jkt")
         }
         if (validatedClientKey != null) {
+            // DPoP-JWT has already been verified, so we can't check for the nonce twice
             if (jwkThumbprintFromToken != validatedClientKey.jwkThumbprintPlain) {
                 throw InvalidDpopProof(
                     "Key from client ${validatedClientKey.jwkThumbprintPlain}" +
@@ -179,18 +191,11 @@ class JwtTokenVerificationService(
                 )
             }
         } else {
-            // DPoP-JWT has already been verified, so we can't check for the nonce twice
             val nonce = dpopProof.payload.nonce
                 ?: throw UseDpopNonce(dpopNonceService.provideNonce(), "DPoP JWT nonce is null")
             if (!dpopNonceService.verifyAndRemoveNonce(nonce)) {
                 throw UseDpopNonce(dpopNonceService.provideNonce(), "DPoP JWT nonce not valid: $nonce")
             }
-        }
-        if (dpopProof.payload.httpTargetUrl != httpRequest.url) {
-            throw InvalidDpopProof("DPoP JWT htu incorrect: ${dpopProof.payload.httpTargetUrl}")
-        }
-        if (dpopProof.payload.httpMethod != httpRequest.method.value.uppercase()) {
-            throw InvalidDpopProof("DPoP JWT htm incorrect: ${dpopProof.payload.httpMethod}")
         }
         accessToken?.let {
             val ath = accessToken.encodeToByteArray().sha256().encodeToString(Base64UrlStrict)

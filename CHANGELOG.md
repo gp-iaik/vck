@@ -57,6 +57,7 @@ Release 8.0.0 (unreleased):
     - Update implementation of [OAuth 2.0 Attestation-Based Client Authentication](https://www.ietf.org/archive/id/draft-ietf-oauth-attestation-based-client-auth-10.html) to Draft 10 from 2026-07-06
     - Add method `attestationChallenge()` to `SimpleAuthorizationService` to deliver challenges for Attestation-Based Client Authentication
     - Support `use_client_attestation` errors and parse challenges from `OAuth-Client-Attestation-Challenge` in `OAuth2KtorClient`
+    - Strengthen validation of DPoP proofs from [OAuth 2.0 Demonstrating Proof of Possession (DPoP)](https://datatracker.ietf.org/doc/html/rfc9449)
 - Deprecations:
     - Remove code deprecated in 7.0.0, e.g. various `Iso180137AnnexC*` and related classes
     - Deprecate all classes used for Presentation Exchange requests and so on, e.g., `CredentialPresentationRequest.PresentationExchangeRequest` or `PresentationExchangeCredentialDisclosure` or `CredentialPresentation.PresentationExchangePresentation`

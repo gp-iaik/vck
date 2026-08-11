@@ -7,12 +7,15 @@ import at.asitplus.openid.OpenIdConstants.TOKEN_TYPE_DPOP
 import at.asitplus.openid.RequestParameters
 import at.asitplus.openid.TokenIntrospectionRequest
 import at.asitplus.openid.TokenIntrospectionResponse
+import at.asitplus.signum.indispensable.josef.JwsCompactTyped
 import at.asitplus.signum.indispensable.josef.JsonWebToken
 import at.asitplus.testballoon.matrix.fixture
 import at.asitplus.testballoon.matrix.matrixSuite
 import at.asitplus.wallet.lib.agent.EphemeralKeyWithoutCert
 import at.asitplus.wallet.lib.agent.RandomSource
+import at.asitplus.wallet.lib.jws.JwsContentTypeConstants
 import at.asitplus.wallet.lib.jws.JwsHeaderCertOrJwk
+import at.asitplus.wallet.lib.jws.JwsHeaderNone
 import at.asitplus.wallet.lib.jws.SignJwt
 import at.asitplus.wallet.lib.oidvci.BuildDPoPHeader
 import at.asitplus.wallet.lib.oidvci.OAuth2Exception
@@ -25,6 +28,8 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import io.ktor.http.*
+import kotlin.time.Clock
+import kotlin.time.Duration.Companion.hours
 
 val OAuth2ClientDPoPTest by matrixSuite {
     fixture {
@@ -34,15 +39,38 @@ val OAuth2ClientDPoPTest by matrixSuite {
             val scope = randomString()
             val client = OAuth2Client()
             val user = OidcUserInfoExtended(OidcUserInfo(randomString()))
+            val tokenService = TokenService.jwt(issueRefreshTokens = true)
             val server = SimpleAuthorizationService(
                 strategy = DummyAuthorizationServiceStrategy(scope),
-                tokenService = TokenService.jwt(
-                    issueRefreshTokens = true
-                ),
+                tokenService = tokenService,
             )
             val clientKey = EphemeralKeyWithoutCert()
             val signDpop = SignJwt<JsonWebToken>(clientKey, JwsHeaderCertOrJwk())
             val state = uuid4().toString()
+
+            suspend fun dpopProof(
+                transform: (JsonWebToken) -> JsonWebToken = { it },
+            ) = BuildDPoPHeader(
+                signDpop = signDpop,
+                url = tokenUrl,
+                nonce = server.getDpopNonce(),
+                randomSource = RandomSource.Default,
+            ).let {
+                signDpop(
+                    JwsContentTypeConstants.DPOP_JWT,
+                    transform(it.payload),
+                    JsonWebToken.serializer(),
+                ).getOrThrow()
+            }
+
+            @Suppress("DEPRECATION")
+            suspend fun validateDpop(
+                dpop: JwsCompactTyped<JsonWebToken>,
+                url: String = tokenUrl,
+                method: HttpMethod = HttpMethod.Post,
+            ) = tokenService.verification.extractValidatedClientKey(
+                RequestInfo(url = url, method = method, dpop = dpop)
+            ).getOrThrow()
 
             suspend fun getCode(state: String): String {
                 val authnRequest = client.createAuthRequestJar(
@@ -245,27 +273,63 @@ val OAuth2ClientDPoPTest by matrixSuite {
             }
         }
 
-        test("authorization code flow with DPoP and wrong URL") {
-            val code = it.getCode(it.state)
-            @Suppress("DEPRECATION")
-            shouldThrow<OAuth2Exception> {
-                it.server.token(
-                    request = it.client.createTokenRequestParameters(
-                        state = it.state,
-                        authorization = OAuth2Client.AuthorizationForToken.Code(code),
-                        scope = it.scope
-                    ),
-                    httpRequest = RequestInfo(
-                        url = it.tokenUrl,
-                        method = HttpMethod.Post,
-                        dpop = BuildDPoPHeader(
-                            signDpop = it.signDpop,
-                            url = "https://somethingelse.com/",
-                            nonce = it.server.getDpopNonce(),
-                            randomSource = RandomSource.Default,
-                        )
-                    )
-                ).getOrThrow()
+        test("reject DPoP proof with wrong URL without consuming nonce") {
+            val nonce = it.server.getDpopNonce()
+            val wrongProof = BuildDPoPHeader(
+                signDpop = it.signDpop,
+                url = "https://somethingelse.com/",
+                nonce = nonce,
+                randomSource = RandomSource.Default,
+            )
+
+            shouldThrow<OAuth2Exception.InvalidDpopProof> {
+                it.validateDpop(wrongProof)
+            }
+
+            it.validateDpop(
+                BuildDPoPHeader(
+                    signDpop = it.signDpop,
+                    url = it.tokenUrl,
+                    nonce = nonce,
+                    randomSource = RandomSource.Default,
+                )
+            ).shouldNotBeNull()
+        }
+
+        test("reject DPoP proof with wrong HTTP method") {
+            shouldThrow<OAuth2Exception.InvalidDpopProof> {
+                it.validateDpop(it.dpopProof { proof -> proof.copy(httpMethod = "GET") })
+            }
+        }
+
+        test("reject DPoP proof without jti") {
+            shouldThrow<OAuth2Exception.InvalidDpopProof> {
+                it.validateDpop(it.dpopProof { proof -> proof.copy(jwtId = null) })
+            }
+        }
+
+        test("reject DPoP proof without iat") {
+            shouldThrow<OAuth2Exception.InvalidDpopProof> {
+                it.validateDpop(it.dpopProof { proof -> proof.copy(issuedAt = null) })
+            }
+        }
+
+        test("reject DPoP proof with iat in the future") {
+            shouldThrow<OAuth2Exception.InvalidDpopProof> {
+                it.validateDpop(it.dpopProof { proof -> proof.copy(issuedAt = Clock.System.now() + 1.hours) })
+            }
+        }
+
+        test("reject DPoP proof without public JWK") {
+            val proof = BuildDPoPHeader(
+                signDpop = SignJwt(it.clientKey, JwsHeaderNone()),
+                url = it.tokenUrl,
+                nonce = it.server.getDpopNonce(),
+                randomSource = RandomSource.Default,
+            )
+
+            shouldThrow<OAuth2Exception.InvalidDpopProof> {
+                it.validateDpop(proof)
             }
         }
 
