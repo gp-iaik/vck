@@ -18,6 +18,7 @@ import at.asitplus.openid.OpenIdConstants.Errors.REGISTRATION_VALUE_NOT_SUPPORTE
 import at.asitplus.openid.OpenIdConstants.Errors.UNKNOWN_CREDENTIAL_CONFIGURATION
 import at.asitplus.openid.OpenIdConstants.Errors.UNKNOWN_CREDENTIAL_IDENTIFIER
 import at.asitplus.openid.OpenIdConstants.Errors.USER_CANCELLED
+import at.asitplus.openid.OpenIdConstants.Errors.USE_ATTESTATION_CHALLENGE
 import at.asitplus.openid.OpenIdConstants.Errors.USE_DPOP_NONCE
 import at.asitplus.signum.indispensable.josef.io.joseCompliantSerializer
 import kotlinx.serialization.DeserializationStrategy
@@ -110,6 +111,14 @@ sealed class OAuth2Exception(
         @Transient val description: String? = null,
         @Transient override val cause: Throwable? = null
     ) : OAuth2Exception(USE_DPOP_NONCE, description), OAuthAuthorizationError
+
+    @Serializable
+    class UseAttestationChallenge(
+        /** Set this as the value for HTTP header `OAuth-Client-Attestation-Challenge` in the response. */
+        val attestationChallenge: String,
+        @Transient val description: String? = null,
+        @Transient override val cause: Throwable? = null
+    ) : OAuth2Exception(USE_ATTESTATION_CHALLENGE, description), OAuthAuthorizationError
 
     @Serializable
     class InvalidCredentialRequest(

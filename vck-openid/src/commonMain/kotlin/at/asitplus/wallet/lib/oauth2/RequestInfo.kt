@@ -70,6 +70,9 @@ val HttpHeaders.OAuthClientAttestation: String
 val HttpHeaders.OAuthClientAttestationPop: String
     get() = "OAuth-Client-Attestation-PoP"
 
+val HttpHeaders.OAuthClientAttestationChallenge: String
+    get() = "OAuth-Client-Attestation-Challenge"
+
 val HttpHeaders.DPoP: String
     get() = "DPoP"
 

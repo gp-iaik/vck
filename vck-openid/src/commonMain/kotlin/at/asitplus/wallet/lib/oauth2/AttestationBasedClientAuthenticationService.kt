@@ -17,7 +17,9 @@ import at.asitplus.wallet.lib.jws.VerifyJwsObjectFun
 import at.asitplus.wallet.lib.jws.VerifyJwsSignatureWithCnf
 import at.asitplus.wallet.lib.jws.VerifyJwsSignatureWithCnfFun
 import at.asitplus.wallet.lib.oauth2.SimpleAuthorizationService.Companion.DEFAULT_WALLET_ATTESTATION_ALGORITHMS
+import at.asitplus.wallet.lib.oidvci.OAuth2Exception
 import at.asitplus.wallet.lib.oidvci.OAuth2Exception.InvalidClient
+import at.asitplus.wallet.lib.oidvci.OAuth2Exception.UseAttestationChallenge
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.jvm.JvmOverloads
 import kotlin.time.Clock
@@ -185,17 +187,17 @@ class AttestationBasedClientAuthenticationService @JvmOverloads constructor(
             throw InvalidClient("client attestation PoP expired: ${payload.expiration}")
         }
         if (payload.nonce == null && payload.challenge == null) {
-            throw InvalidClient("client attestation PoP missing challenge/nonce")
+            throw UseAttestationChallenge("client attestation PoP missing challenge/nonce")
         }
         payload.nonce?.let { nonce ->
             if (!nonceService.verifyAndRemoveNonce(nonce)) {
-                throw InvalidClient("client attestation PoP invalid nonce")
+                throw UseAttestationChallenge("client attestation PoP nonce invalid")
             }
         } ?: payload.challenge?.let { challenge ->
             if (!nonceService.verifyAndRemoveNonce(challenge)) {
-                throw InvalidClient("client attestation PoP invalid challenge")
+                throw UseAttestationChallenge("client attestation PoP challenge invalid")
             }
-        } ?: throw InvalidClient("client attestation PoP missing challenge")
+        } ?: throw UseAttestationChallenge("client attestation PoP challenge missing")
         // TODO Verify other fields
         // TODO Validate signature against CNF key
     }

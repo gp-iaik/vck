@@ -29,6 +29,7 @@ import at.asitplus.wallet.lib.data.SdJwtCredentialScheme
 import at.asitplus.wallet.lib.data.rfc.tokenStatusList.RevocationList
 import at.asitplus.wallet.lib.extensions.supportedSdAlgorithms
 import at.asitplus.wallet.lib.oauth2.DPoPNonce
+import at.asitplus.wallet.lib.oauth2.OAuthClientAttestationChallenge
 import at.asitplus.wallet.lib.oauth2.ResponseWithDpopNonce
 import at.asitplus.wallet.lib.oidvci.CredentialDataProviderFun
 import at.asitplus.wallet.lib.oidvci.CredentialIssuer
@@ -57,6 +58,8 @@ object TestUtils {
             append(HttpHeaders.ContentType, ContentType.Application.Json.toString())
             (throwable as? OAuth2Exception.UseDpopNonce)?.dpopNonce
                 ?.let { append(HttpHeaders.DPoPNonce, it) }
+            (throwable as? OAuth2Exception.UseAttestationChallenge)?.attestationChallenge
+                ?.let { append(HttpHeaders.OAuthClientAttestationChallenge, it) }
         },
         status = HttpStatusCode.BadRequest
     ).also { Napier.w("Server error: ${throwable.message}", throwable) }

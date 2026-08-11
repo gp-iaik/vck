@@ -466,7 +466,7 @@ class SimpleAuthorizationService @JvmOverloads constructor(
      * @param request as sent from the client as `POST`
      * @param httpRequest information about the HTTP request from the client, to validate authentication
      *
-     * @return [KmmResult] may contain a [OAuth2Exception], especially a [UseDpopNonce]
+     * @return [KmmResult] may contain a [OAuth2Exception], especially a [UseDpopNonce] or [UseAttestationChallenge]
      */
     override suspend fun token(
         request: TokenRequestParameters,
@@ -615,7 +615,7 @@ class SimpleAuthorizationService @JvmOverloads constructor(
     /**
      * Returns the user info associated with this access token, when the token in [authorizationHeader] is correct.
      *
-     * @return [KmmResult] may contain a [OAuth2Exception], especially a [UseDpopNonce]
+     * @return [KmmResult] may contain a [OAuth2Exception], especially a [UseDpopNonce] or [UseAttestationChallenge]
      */
     override suspend fun userInfo(
         authorizationHeader: String,

@@ -477,6 +477,9 @@ object OpenIdConstants {
         /** Use a fresh DPoP nonce (RFC 9449): `use_dpop_nonce`.*/
         const val USE_DPOP_NONCE = "use_dpop_nonce"
 
+        /** Use a fresh attestation challenge (OA-ABCA Draft 10): `use_attestation_challenge`.*/
+        const val USE_ATTESTATION_CHALLENGE = "use_attestation_challenge"
+
         /** Invalid request in general: `invalid_request`. */
         const val INVALID_REQUEST = "invalid_request"
 
