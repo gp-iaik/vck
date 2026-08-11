@@ -1,7 +1,6 @@
 package at.asitplus.wallet.lib.oauth2
 
 import at.asitplus.catching
-import at.asitplus.openid.OpenIdAuthorizationDetails
 import at.asitplus.openid.OpenIdConstants
 import at.asitplus.signum.indispensable.josef.JwsCompactTyped
 import at.asitplus.wallet.lib.jws.JwsContentTypeConstants
@@ -31,7 +30,7 @@ class JwtTokenService(
         val jwtId = tokenJwt.payload.jwtId
             ?: throw InvalidToken("access token not valid: $accessToken")
         with(tokenJwt.payload) {
-            toValidatedAccessToken(accessToken, jwtId)
+            toValidatedAccessToken(accessToken, generation.getUserInfoExtended(jwtId))
         }
     } else {
         throw InvalidToken("authorization header not valid: $authorizationHeader")
@@ -50,17 +49,8 @@ class JwtTokenService(
             ?: throw InvalidToken("access token not valid: $subjectToken")
         // can't validate DPoP JWT, as the third party can't forward this
         with(tokenJwt.payload) {
-            toValidatedAccessToken(subjectToken, jwtId)
+            toValidatedAccessToken(subjectToken, generation.getUserInfoExtended(jwtId))
         }
     }
 
-    private suspend fun OpenId4VciAccessToken.toValidatedAccessToken(
-        accessToken: String,
-        jwtId: String,
-    ): ValidatedAccessToken = ValidatedAccessToken(
-        token = accessToken,
-        userInfoExtended = generation.getUserInfoExtended(jwtId),
-        authorizationDetails = authorizationDetails?.filterIsInstance<OpenIdAuthorizationDetails>()?.toSet(),
-        scope = scope
-    )
 }

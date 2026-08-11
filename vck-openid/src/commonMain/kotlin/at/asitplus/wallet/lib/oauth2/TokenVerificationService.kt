@@ -18,7 +18,6 @@ import at.asitplus.wallet.lib.jws.VerifyJwsObject
 import at.asitplus.wallet.lib.jws.VerifyJwsObjectFun
 import at.asitplus.wallet.lib.jws.VerifyJwsSignatureWithKey
 import at.asitplus.wallet.lib.jws.VerifyJwsSignatureWithKeyFun
-import at.asitplus.wallet.lib.oauth2.TokenService.Companion.jwt
 import at.asitplus.wallet.lib.oidvci.OAuth2Exception.*
 import at.asitplus.wallet.lib.oidvci.TokenInfo
 import io.matthewnelson.encoding.core.Encoder.Companion.encodeToString
@@ -51,7 +50,7 @@ interface TokenVerificationService {
         tokenOrAuthHeader: String,
         httpRequest: RequestInfo?,
         dpopNonceService: NonceService? = null,
-    ): KmmResult<Unit>
+    ): KmmResult<ValidatedAccessToken>
 
     /** Validate a DPoP proof and extract the client's key if the proof exists at all. */
     suspend fun extractValidatedClientKey(
@@ -118,12 +117,13 @@ class JwtTokenVerificationService(
         tokenOrAuthHeader: String,
         httpRequest: RequestInfo?,
         dpopNonceService: NonceService?,
-    ) = catching {
+    ): KmmResult<ValidatedAccessToken> = catching {
         val accessToken = if (tokenOrAuthHeader.startsWith(TOKEN_TYPE_DPOP, ignoreCase = true))
             tokenOrAuthHeader.removePrefix(TOKEN_PREFIX_DPOP).split(" ").last()
         else tokenOrAuthHeader
         val tokenJwt = validateToken(accessToken, JwsContentTypeConstants.OID4VCI_AT_JWT)
         validateDpopProof(accessToken, tokenJwt, httpRequest, dpopNonceService ?: this.dpopNonceService, null)
+        tokenJwt.payload.toValidatedAccessToken(accessToken, null)
     }
 
     /** Validate a DPoP proof and extract the client's key if the proof exists at all. */
@@ -265,7 +265,13 @@ class BearerTokenVerificationService(
         tokenOrAuthHeader: String,
         httpRequest: RequestInfo?,
         dpopNonceService: NonceService?,
-    ): KmmResult<Unit> = catching { getTokenInfo(tokenOrAuthHeader) }
+    ): KmmResult<ValidatedAccessToken> = catching {
+        val token = if (tokenOrAuthHeader.startsWith(TOKEN_TYPE_BEARER, ignoreCase = true))
+            tokenOrAuthHeader.removePrefix(TOKEN_PREFIX_BEARER).split(" ").last()
+        else tokenOrAuthHeader
+        tokenGenerationService.verifyAccessToken(token)
+            ?: throw InvalidToken("access token not valid: $token")
+    }
 
     override suspend fun getTokenInfo(
         tokenOrAuthHeader: String,

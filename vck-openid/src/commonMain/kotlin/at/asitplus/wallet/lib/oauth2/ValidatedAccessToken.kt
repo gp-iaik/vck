@@ -2,6 +2,7 @@ package at.asitplus.wallet.lib.oauth2
 
 import at.asitplus.openid.AuthorizationDetails
 import at.asitplus.openid.OidcUserInfoExtended
+import at.asitplus.openid.OpenIdAuthorizationDetails
 import at.asitplus.wallet.lib.oidvci.TokenInfo
 import kotlinx.serialization.Serializable
 
@@ -18,5 +19,20 @@ data class ValidatedAccessToken(
         authorizationDetails = authorizationDetails,
         scope = scope,
     )
+
+    val validCredentialIdentifiers: Collection<String>
+        get() = authorizationDetails
+            ?.filterIsInstance<OpenIdAuthorizationDetails>()
+            ?.flatMap { it.credentialIdentifiers ?: setOf() }
+            ?: setOf()
 }
 
+internal fun OpenId4VciAccessToken.toValidatedAccessToken(
+    accessToken: String,
+    userInfo: OidcUserInfoExtended?,
+): ValidatedAccessToken = ValidatedAccessToken(
+    token = accessToken,
+    userInfoExtended = userInfo,
+    authorizationDetails = authorizationDetails?.filterIsInstance<OpenIdAuthorizationDetails>()?.toSet(),
+    scope = scope
+)

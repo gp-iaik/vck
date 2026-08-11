@@ -562,10 +562,10 @@ class SimpleAuthorizationService @JvmOverloads constructor(
     private fun TokenRequestParameters.validatedScope(clientAuthnRequest: ClientAuthRequest): String? {
         if (clientAuthnRequest.scope == null)
             throw InvalidRequest("Scope not from auth code: ${scope}, for code ${clientAuthnRequest.issuedCode}")
-        scope?.split(" ")?.forEach { singleScope ->
-            if (!clientAuthnRequest.scope.contains(singleScope))
-                throw InvalidRequest("Scope not from auth code: $singleScope")
-        }
+        val requested = scope.orEmpty().split(" ").filter(String::isNotBlank).toSet()
+        val granted = clientAuthnRequest.scope.split(" ").filter(String::isNotBlank).toSet()
+        if (!granted.containsAll(requested))
+            throw InvalidRequest("Not all scopes from auth code: $requested")
         return scope
     }
 
@@ -701,8 +701,8 @@ class SimpleAuthorizationService @JvmOverloads constructor(
     override suspend fun validateAccessToken(
         authorizationHeader: String,
         httpRequest: RequestInfo?,
-    ): KmmResult<Boolean> = catching {
-        tokenService.verification.validateAccessToken(authorizationHeader, httpRequest).isSuccess
+    ): KmmResult<ValidatedAccessToken> = catching {
+        tokenService.verification.validateAccessToken(authorizationHeader, httpRequest).getOrThrow()
     }
 
     override suspend fun getDpopNonce() = tokenService.dpopNonce()

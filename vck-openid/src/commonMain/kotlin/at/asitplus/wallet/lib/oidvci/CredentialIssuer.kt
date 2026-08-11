@@ -30,6 +30,7 @@ import at.asitplus.wallet.lib.jws.SignJwt
 import at.asitplus.wallet.lib.jws.SignJwtFun
 import at.asitplus.wallet.lib.jws.VerifyJwsObject
 import at.asitplus.wallet.lib.oauth2.RequestInfo
+import at.asitplus.wallet.lib.oauth2.ValidatedAccessToken
 import at.asitplus.wallet.lib.oidvci.OAuth2Exception.*
 import io.github.aakira.napier.Napier
 import kotlinx.serialization.json.Json
@@ -224,8 +225,10 @@ class CredentialIssuer @JvmOverloads constructor(
         Napier.d("credential called with $authorizationHeader, $request")
         if (!hasBeenEncrypted && encryptionService.requireRequestEncryption)
             throw InvalidEncryptionParameters("Credential request has not been encrypted")
-        authorizationService.validateAccessToken(authorizationHeader, requestInfo).getOrThrow()
-        val userInfo = request.introspectTokenLoadUserInfo(authorizationHeader, requestInfo)
+        val validated = authorizationService.validateAccessToken(authorizationHeader, requestInfo).getOrThrow()
+        request.validateAgainstToken(validated)
+        val userInfo = validated.userInfoExtended
+            ?: loadUserInfo(authorizationHeader, requestInfo)
         val (scheme, representation) = request.extractCredentialRepresentation()
         val responseParameters = proofValidator.validateProofExtractSubjectPublicKeys(request).map { subjectPublicKey ->
             issuer.issueCredential(
@@ -247,42 +250,37 @@ class CredentialIssuer @JvmOverloads constructor(
             .also { Napier.i("credential returns"); Napier.d("credential returns $it") }
     }
 
-    private suspend fun CredentialRequestParameters.introspectTokenLoadUserInfo(
+    private suspend fun loadUserInfo(
         authorizationHeader: String,
         request: RequestInfo?,
-    ): OidcUserInfoExtended = run {
-        validateAgainstToken(authorizationHeader, request)
-        authorizationService.getUserInfo(
-            authorizationHeader = authorizationHeader,
-            httpRequest = request
-        ).getOrThrow().let {
-            OidcUserInfoExtended.fromJsonObject(it).getOrThrow()
-        }
+    ): OidcUserInfoExtended = authorizationService.getUserInfo(
+        authorizationHeader = authorizationHeader,
+        httpRequest = request
+    ).getOrThrow().let {
+        OidcUserInfoExtended.fromJsonObject(it).getOrThrow()
     }
 
-    private suspend fun CredentialRequestParameters.validateAgainstToken(
-        authorizationHeader: String,
-        request: RequestInfo?,
-    ): Unit = authorizationService.getTokenInfo(
-        authorizationHeader = authorizationHeader,
-        httpRequest = request,
-    ).getOrThrow().let {
-        if (it.authorizationDetails != null) {
+    private fun CredentialRequestParameters.validateAgainstToken(
+        token: ValidatedAccessToken,
+    ) {
+        if (token.authorizationDetails != null) {
             if (credentialIdentifier == null)
                 throw InvalidCredentialRequest("credential_identifier expected to be set")
             if (credentialConfigurationId != null)
                 throw InvalidCredentialRequest("credential_configuration_id must not be set when credential_identifier is set")
-            if (!it.validCredentialIdentifiers.contains(credentialIdentifier))
-                throw InvalidToken("credential_identifier $credentialIdentifier expected to be in $it")
-        } else if (it.scope != null) {
+            if (!token.validCredentialIdentifiers.contains(credentialIdentifier))
+                throw InvalidToken("credential_identifier $credentialIdentifier expected to be in $token")
+        } else if (token.scope != null) {
             if (credentialConfigurationId == null)
                 throw InvalidCredentialRequest("credential_configuration_id expected to be set")
             if (credentialIdentifier != null)
                 throw InvalidCredentialRequest("credential_identifier must not be set when credential_configuration_id is set")
             val configurationScope = metadata.supportedCredentialConfigurations?.get(credentialConfigurationId!!)?.scope
                 ?: throw InvalidCredentialRequest("credential_configuration_id $credentialConfigurationId not supported")
-            if (!it.scope.contains(configurationScope))
-                throw InvalidToken("credential_configuration_id $credentialConfigurationId expected to be in $it")
+            val requested = configurationScope.split(" ").filter(String::isNotBlank).toSet()
+            val granted = token.scope.orEmpty().split(" ").filter(String::isNotBlank).toSet()
+            if (!granted.containsAll(requested))
+                throw InvalidToken("credential_configuration_id $credentialConfigurationId not granted by token $token")
         } else {
             throw InvalidToken("Neither scope nor authorization details stored for access token")
         }

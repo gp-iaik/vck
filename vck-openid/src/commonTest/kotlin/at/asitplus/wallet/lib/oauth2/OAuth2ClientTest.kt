@@ -19,6 +19,7 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.types.shouldBeInstanceOf
 
 val OAuth2ClientTest by matrixSuite {
@@ -54,6 +55,22 @@ val OAuth2ClientTest by matrixSuite {
             )
             it.server.token(tokenRequest, null).isSuccess shouldBe true
             it.server.token(tokenRequest, null).isFailure shouldBe true
+        }
+        test("token request with a scope that is only a substring of the granted scope") {
+            val preAuth = it.server.providePreAuthorizedCode(user)
+                .shouldNotBeNull()
+            // Scopes are space-delimited values, so a substring of a granted scope is not itself granted
+            val requestedScope = it.scope.dropLast(1)
+            it.scope shouldContain requestedScope
+            val tokenRequest = it.client.createTokenRequestParameters(
+                state = uuid4().toString(),
+                authorization = OAuth2Client.AuthorizationForToken.PreAuthCode(preAuth),
+                scope = requestedScope
+            )
+
+            shouldThrow<OAuth2Exception> {
+                it.server.token(tokenRequest, null).getOrThrow()
+            }
         }
         test("process with pushed authorization request") {
             val state = uuid4().toString()
