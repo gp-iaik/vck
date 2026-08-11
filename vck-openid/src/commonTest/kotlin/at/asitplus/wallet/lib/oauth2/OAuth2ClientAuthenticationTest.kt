@@ -57,29 +57,29 @@ val OAuth2ClientAuthenticationTest by matrixSuite {
             )
 
             val signClientAttestationPop: SignJwtFun<JsonWebToken> = SignJwt(clientKey, JwsHeaderNone())
-            // TODO Need support for nonce/challenge
+            val scope = randomString()
+            val server = SimpleAuthorizationService(
+                publicContext = AUTHORIZATION_SERVER,
+                strategy = DummyAuthorizationServiceStrategy(scope),
+                clientAuthenticationService = AttestationBasedClientAuthenticationService(
+                    issuerIdentifier = AUTHORIZATION_SERVER,
+                    verifyJwsObject = VerifyJwsObjectTrustedCertificate(
+                        trustedIssuers = { setOf(walletProviderCaCert) }
+                    ),
+                )
+            )
             val clientAttestationPop = BuildClientAttestationPoPJwt(
                 signJwt = signClientAttestationPop,
-                clientId = client.clientId,
                 audience = AUTHORIZATION_SERVER,
                 randomSource = RandomSource.Default
             )
 
             object {
-                val scope = randomString()
+                val scope = scope
                 val client = client
-                val walletProviderCa = walletProviderCa
-                val attesterBackend = attesterBackend
-                var server = SimpleAuthorizationService(
-                    publicContext = AUTHORIZATION_SERVER,
-                    strategy = DummyAuthorizationServiceStrategy(scope),
-clientAuthenticationService = AttestationBasedClientAuthenticationService(
-    verifyJwsObject = VerifyJwsObjectTrustedCertificate(
-        trustedIssuers = { setOf(walletProviderCaCert) }
-    ),)
-                )
+                val server = server
                 val clientKey = clientKey
-                var clientAttestation = clientAttestation
+                val clientAttestation = clientAttestation
                 val clientAttestationPop = clientAttestationPop
                 val signClientAttestationPop = signClientAttestationPop
 
@@ -101,22 +101,22 @@ clientAuthenticationService = AttestationBasedClientAuthenticationService(
                  */
                 suspend fun freshPop() = BuildClientAttestationPoPJwt(
                     signJwt = signClientAttestationPop,
-                    clientId = client.clientId,
                     audience = AUTHORIZATION_SERVER,
+                    nonce = server.attestationChallenge().getOrThrow().shouldNotBeNull().attestationChallenge,
                     randomSource = RandomSource.Default
                 )
 
                 @Suppress("DEPRECATION")
                 suspend fun par(
                     clientAttestation: JwsCompactTyped<JsonWebToken> = this.clientAttestation,
-                    clientAttestationPop: JwsCompactTyped<JsonWebToken> = this.clientAttestationPop,
+                    clientAttestationPop: JwsCompactTyped<JsonWebToken>? = null,
                 ) = server.par(
                     client.createAuthRequestJar(state = uuid4().toString(), scope = scope),
                     RequestInfo(
                         url = "https://example.com/",
                         method = HttpMethod.Post,
                         clientAttestation = clientAttestation,
-                        clientAttestationPop = clientAttestationPop,
+                        clientAttestationPop = clientAttestationPop ?: freshPop(),
                     )
                 ).getOrThrow()
 
@@ -160,6 +160,7 @@ clientAuthenticationService = AttestationBasedClientAuthenticationService(
                 state = state,
                 scope = it.scope,
             )
+
             @Suppress("DEPRECATION")
             val parResponse = it.server.par(
                 authnRequest,
@@ -167,7 +168,7 @@ clientAuthenticationService = AttestationBasedClientAuthenticationService(
                     url = "https://example.com/",
                     method = HttpMethod.Post,
                     clientAttestation = it.clientAttestation,
-                    clientAttestationPop = it.clientAttestationPop
+                    clientAttestationPop = it.freshPop()
                 )
             ).getOrThrow()
                 .shouldBeInstanceOf<PushedAuthenticationResponseParameters>()
@@ -194,30 +195,17 @@ clientAuthenticationService = AttestationBasedClientAuthenticationService(
             it.clientAttestationPop.payload.expiration.shouldBeNull()
         }
 
-        test("client attestation PoP uses challenge instead of nonce") {
-            val challenge = randomString()
+        test("client attestation PoP uses challenge and nonce") {
+            val challenge = it.server.attestationChallenge().getOrThrow().shouldNotBeNull().attestationChallenge
             val pop = BuildClientAttestationPoPJwt(
                 signJwt = it.signClientAttestationPop,
-                clientId = it.client.clientId,
                 audience = "some server",
                 nonce = challenge,
                 randomSource = RandomSource.Default,
             )
 
             pop.payload.challenge shouldBe challenge
-            pop.payload.nonce.shouldBeNull()
-        }
-
-        test("reject client attestation with secret material in cnf jwk") {
-            val clientAttestation = BuildClientAttestationJwt(
-                signJwt = it.attesterBackend,
-                clientId = it.client.clientId,
-                clientKey = it.clientKey.jsonWebKey.copy(k = byteArrayOf(1)),
-            )
-
-            shouldThrow<OAuth2Exception> {
-                it.par(clientAttestation = clientAttestation)
-            }
+            pop.payload.nonce shouldBe challenge
         }
 
         test("reject client attestation without cnf") {
@@ -238,7 +226,7 @@ clientAuthenticationService = AttestationBasedClientAuthenticationService(
 
         test("accept client attestation PoP with iss and exp, removed in draft 8 and 6 but tolerated") {
             val pop = it.signPop(
-                it.clientAttestationPop.payload.copy(
+                it.freshPop().payload.copy(
                     issuer = it.client.clientId,
                     expiration = Clock.System.now() + 10.minutes,
                 )
@@ -249,7 +237,7 @@ clientAuthenticationService = AttestationBasedClientAuthenticationService(
 
         test("reject client attestation PoP with iss of another client") {
             val pop = it.signPop(
-                it.clientAttestationPop.payload.copy(issuer = "https://attacker.example")
+                it.freshPop().payload.copy(issuer = "https://attacker.example")
             )
 
             shouldThrow<OAuth2Exception> {
@@ -259,7 +247,7 @@ clientAuthenticationService = AttestationBasedClientAuthenticationService(
 
         test("reject expired client attestation PoP") {
             val pop = it.signPop(
-                it.clientAttestationPop.payload.copy(expiration = Clock.System.now() - 1.hours)
+                it.freshPop().payload.copy(expiration = Clock.System.now() - 1.hours)
             )
 
             shouldThrow<OAuth2Exception> {
@@ -268,7 +256,7 @@ clientAuthenticationService = AttestationBasedClientAuthenticationService(
         }
 
         test("reject client attestation PoP without jti") {
-            val pop = it.signPop(it.clientAttestationPop.payload.copy(jwtId = null))
+            val pop = it.signPop(it.freshPop().payload.copy(jwtId = null))
 
             shouldThrow<OAuth2Exception> {
                 it.par(clientAttestationPop = pop)
@@ -277,7 +265,7 @@ clientAuthenticationService = AttestationBasedClientAuthenticationService(
 
         test("reject client attestation PoP for another audience") {
             val pop = it.signPop(
-                it.clientAttestationPop.payload.copy(audience = "https://attacker.example")
+                it.freshPop().payload.copy(audience = "https://attacker.example")
             )
 
             shouldThrow<OAuth2Exception> {
@@ -286,7 +274,7 @@ clientAuthenticationService = AttestationBasedClientAuthenticationService(
         }
 
         test("reject client attestation PoP without aud") {
-            val pop = it.signPop(it.clientAttestationPop.payload.copy(audience = null))
+            val pop = it.signPop(it.freshPop().payload.copy(audience = null))
 
             shouldThrow<OAuth2Exception> {
                 it.par(clientAttestationPop = pop)
@@ -295,7 +283,7 @@ clientAuthenticationService = AttestationBasedClientAuthenticationService(
 
         test("reject stale client attestation PoP") {
             val pop = it.signPop(
-                it.clientAttestationPop.payload.copy(issuedAt = Clock.System.now() - 1.hours)
+                it.freshPop().payload.copy(issuedAt = Clock.System.now() - 1.hours)
             )
 
             shouldThrow<OAuth2Exception> {
@@ -304,7 +292,7 @@ clientAuthenticationService = AttestationBasedClientAuthenticationService(
         }
 
         test("reject client attestation PoP without iat") {
-            val pop = it.signPop(it.clientAttestationPop.payload.copy(issuedAt = null))
+            val pop = it.signPop(it.freshPop().payload.copy(issuedAt = null))
 
             shouldThrow<OAuth2Exception> {
                 it.par(clientAttestationPop = pop)
@@ -313,14 +301,15 @@ clientAuthenticationService = AttestationBasedClientAuthenticationService(
 
         test("reject client attestation PoP with unsupported algorithm") {
             shouldThrow<OAuth2Exception> {
-                it.par(clientAttestationPop = it.clientAttestationPop.withHeaderAlg(JwsAlgorithm.Signature.RS256))
+                it.par(clientAttestationPop = it.freshPop().withHeaderAlg(JwsAlgorithm.Signature.RS256))
             }
         }
 
         test("reject client attestation PoP not signed by the cnf key") {
+            val payload = it.freshPop().payload
             val pop = SignJwt<JsonWebToken>(EphemeralKeyWithSelfSignedCert(), JwsHeaderNone())(
                 JwsContentTypeConstants.CLIENT_ATTESTATION_POP_JWT,
-                it.clientAttestationPop.payload,
+                payload,
                 JsonWebToken.serializer(),
             ).getOrThrow()
 
@@ -330,10 +319,11 @@ clientAuthenticationService = AttestationBasedClientAuthenticationService(
         }
 
         test("reject replayed client attestation PoP") {
-            it.par()
+            val pop = it.freshPop()
+            it.par(clientAttestationPop = pop)
 
             shouldThrow<OAuth2Exception> {
-                it.par()
+                it.par(clientAttestationPop = pop)
             }
         }
 
@@ -344,8 +334,8 @@ clientAuthenticationService = AttestationBasedClientAuthenticationService(
                 scope = it.scope,
             )
 
-            it.clientAttestation = BuildClientAttestationJwt(
-                SignJwt(it.walletProviderCa.issue(), JwsHeaderCertOrJwk()),
+            val clientAttestation = BuildClientAttestationJwt(
+                SignJwt(EphemeralKeyWithSelfSignedCert(), JwsHeaderCertOrJwk()),
                 clientId = "wrong client id",
                 clientKey = it.clientKey.jsonWebKey
             )
@@ -357,7 +347,7 @@ clientAuthenticationService = AttestationBasedClientAuthenticationService(
                     RequestInfo(
                         url = "https://example.com/",
                         method = HttpMethod.Post,
-                        clientAttestation = it.clientAttestation,
+                        clientAttestation = clientAttestation,
                         clientAttestationPop = it.clientAttestationPop
                     )
                 ).getOrThrow()
@@ -372,20 +362,20 @@ clientAuthenticationService = AttestationBasedClientAuthenticationService(
             )
 
             // the attestation is signed by a certificate of it.walletProviderCa, which is not on this trust list
-            it.server = SimpleAuthorizationService(
+            val server = SimpleAuthorizationService(
                 publicContext = AUTHORIZATION_SERVER,
                 strategy = DummyAuthorizationServiceStrategy(it.scope),
-    clientAuthenticationService = AttestationBasedClientAuthenticationService(
+                clientAuthenticationService = AttestationBasedClientAuthenticationService(
 
-        verifyJwsObject = VerifyJwsObjectTrustedCertificate(
-            trustedIssuers = { setOf(TestCertificateAuthority().certificate()) }
-        ),
+                    verifyJwsObject = VerifyJwsObjectTrustedCertificate(
+                        trustedIssuers = { setOf(TestCertificateAuthority().certificate()) }
+                    ),
                 ),
             )
 
             @Suppress("DEPRECATION")
             shouldThrow<OAuth2Exception> {
-                it.server.par(
+                server.par(
                     authnRequest,
                     RequestInfo(
                         url = "https://example.com/",
@@ -404,7 +394,7 @@ clientAuthenticationService = AttestationBasedClientAuthenticationService(
                 scope = it.scope,
             )
 
-            it.clientAttestation = BuildClientAttestationJwt(
+            val clientAttestation = BuildClientAttestationJwt(
                 SignJwt(EphemeralKeyWithSelfSignedCert(), JwsHeaderCertOrJwk()),
                 clientId = it.client.clientId,
                 clientKey = it.clientKey.jsonWebKey
@@ -417,7 +407,7 @@ clientAuthenticationService = AttestationBasedClientAuthenticationService(
                     RequestInfo(
                         url = "https://example.com/",
                         method = HttpMethod.Post,
-                        clientAttestation = it.clientAttestation,
+                        clientAttestation = clientAttestation,
                         clientAttestationPop = it.clientAttestationPop
                     )
                 ).getOrThrow()

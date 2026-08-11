@@ -123,7 +123,21 @@ class OAuth2KtorClient(
     /** Store the latest attestation challenge per origin (if the AS supports challenges) */
     private val attestationChallengeByOrigin = AtomicReference(mapOf<String, String>())
 
-    private fun currentAttestationChallenge(url: String) = attestationChallengeByOrigin.load()[url.origin()]
+    /**
+     * Consumes the challenge that the AS provided in a previous response, see
+     * [OAuth 2.0 Attestation-Based Client Authentication](https://www.ietf.org/archive/id/draft-ietf-oauth-attestation-based-client-auth-10.html)
+     * 6.2. A challenge is single-use, so reusing it would get the next request rejected with
+     * `use_attestation_challenge`.
+     */
+    private fun takeAttestationChallenge(url: String): String? {
+        val origin = url.origin()
+        var challenge: String? = null
+        attestationChallengeByOrigin.update {
+            challenge = it[origin]
+            it - origin
+        }
+        return challenge
+    }
 
     private fun updateAttestationChallenge(url: String, challenge: String?) =
         challenge?.takeIf { it.isNotBlank() }?.let {
@@ -560,7 +574,7 @@ class OAuth2KtorClient(
         issuerMetadata: IssuerMetadata? = null,
     ): HttpRequestBuilder.() -> Unit {
         val (clientAttJwt, clientAttPop) = if (loadInstanceAttestation != null && oauthMetadata.supportsClientAuth()) {
-            val wia = loadInstanceAttestation.invoke(
+            val wia = loadInstanceAttestation(
                 LoadInstanceAttestationInput(
                     authorizationServer = authorizationServer,
                     credentialIssuer = issuerMetadata?.credentialIssuer ?: authorizationServer,
@@ -578,13 +592,12 @@ class OAuth2KtorClient(
             }
 
             val pop = catching {
-                BuildClientAttestationPoPJwt.invoke(
+                BuildClientAttestationPoPJwt(
                     signJwt = SignJwt(keyMaterial, JwsHeaderNone()),
-                    clientId = oAuth2Client.clientId,
                     audience = authorizationServer,
                     // nonce support must not be implemented by the AS, so we keep it optional
-                    nonce = currentAttestationChallenge(resourceUrl)
-                        ?: fetchAttestationChallenge(resourceUrl, oauthMetadata),
+                    nonce = takeAttestationChallenge(resourceUrl)
+                        ?: fetchAttestationChallenge(oauthMetadata),
                 )
             }.getOrThrow()
             wia.jws to pop.jws
@@ -609,13 +622,12 @@ class OAuth2KtorClient(
         }
     }
 
+    /** Not cached: the challenge is used for the request being built right now, and is single-use. */
     private suspend fun fetchAttestationChallenge(
-        resourceUrl: String,
         oauthMetadata: OAuth2AuthorizationServerMetadata
     ): String? = oauthMetadata.challengeEndpoint?.let { url ->
         catchingUnwrapped {
             client.post(url).body<AttestationChallengeResponse>().attestationChallenge
-                .let { updateAttestationChallenge(resourceUrl, it) }
         }.getOrNull()
     }
 

@@ -81,6 +81,7 @@ val OpenId4VciClientWithEncryptionTest by matrixSuite {
         val credentialEndpointPath = "/credential"
         val nonceEndpointPath = "/nonce"
         val parEndpointPath = "/par"
+        val challengeEndpointPath = "/challenge"
         val publicContext = "https://issuer.example.com"
         val authorizationService = SimpleAuthorizationService(
             strategy = CredentialAuthorizationServiceStrategy(credentialSchemes),
@@ -88,6 +89,7 @@ val OpenId4VciClientWithEncryptionTest by matrixSuite {
             authorizationEndpointPath = authorizationEndpointPath,
             tokenEndpointPath = tokenEndpointPath,
             pushedAuthorizationRequestEndpointPath = parEndpointPath,
+            challengeEndpointPath = challengeEndpointPath,
             clientAuthenticationService = AttestationBasedClientAuthenticationService(),
             tokenService = TokenService.jwt(
                 issueRefreshTokens = true
@@ -158,13 +160,21 @@ val OpenId4VciClientWithEncryptionTest by matrixSuite {
                     respond(credentialIssuer.nonceWithDpopNonce().getOrThrow())
                 }
 
+                request.url.fullPath.startsWith(challengeEndpointPath) -> {
+                    respond(authorizationService.attestationChallenge().getOrThrow())
+                }
+
                 request.url.fullPath.startsWith(credentialEndpointPath) -> {
                     val requestBody = request.body.toByteArray().decodeToString()
                     val authn = request.headers[HttpHeaders.Authorization].shouldNotBeNull()
                     credentialIssuer.credential(
                         authorizationHeader = authn,
                         params = WalletService.CredentialRequest.parse(requestBody).getOrThrow(),
-                        credentialDataProvider = credentialDataProviderFun(scheme, representation, attributes),
+                        credentialDataProvider = credentialDataProviderFun(
+                            scheme = scheme,
+                            representation = representation,
+                            attributes = attributes
+                        ),
                         request = request.toRequestInfo(),
                     ).fold(
                         onSuccess = { respond(it) },

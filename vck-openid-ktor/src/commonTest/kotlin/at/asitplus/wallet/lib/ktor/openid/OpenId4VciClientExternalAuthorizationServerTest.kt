@@ -126,6 +126,7 @@ val OpenId4VciClientExternalAuthorizationServerTest by matrixSuite {
         val parEndpointPath = "/par"
         val userInfoEndpointPath = "/userinfo"
         val introspectionEndpointPath = "/introspection"
+        val challengeEndpointPath = "/challenge"
         val issuerPublicContext = "https://issuer.example.com"
         val authServerPublicContext = "https://auth.example.com"
         val tokenService = TokenService.jwt(
@@ -139,6 +140,7 @@ val OpenId4VciClientExternalAuthorizationServerTest by matrixSuite {
             pushedAuthorizationRequestEndpointPath = parEndpointPath,
             userInfoEndpointPath = userInfoEndpointPath,
             introspectionEndpointPath = introspectionEndpointPath,
+            challengeEndpointPath = challengeEndpointPath,
             clientAuthenticationService = AttestationBasedClientAuthenticationService(
                 issuerIdentifier = if (validatePopAudience) authServerPublicContext else null,
             ),
@@ -197,7 +199,6 @@ val OpenId4VciClientExternalAuthorizationServerTest by matrixSuite {
                         onSuccess = { respond(it) },
                         onFailure = { respondOAuth2Error(it) }
                     )
-
                 }
 
                 request.url.toString() == "$authServerPublicContext$introspectionEndpointPath" -> {
@@ -207,11 +208,14 @@ val OpenId4VciClientExternalAuthorizationServerTest by matrixSuite {
                         onSuccess = { respond(it) },
                         onFailure = { respondOAuth2Error(it) }
                     )
-
                 }
 
                 request.url.toString() == "$issuerPublicContext$nonceEndpointPath" -> {
                     respond(credentialIssuer.nonceWithDpopNonce().getOrThrow())
+                }
+
+                request.url.toString() == "$authServerPublicContext$challengeEndpointPath" -> {
+                    respond(externalAuthorizationServer.attestationChallenge().getOrThrow())
                 }
 
                 request.url.toString() == "$issuerPublicContext$credentialEndpointPath" -> {

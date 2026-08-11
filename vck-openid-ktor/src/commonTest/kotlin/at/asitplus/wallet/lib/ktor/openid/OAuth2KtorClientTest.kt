@@ -1,10 +1,13 @@
 package at.asitplus.wallet.lib.ktor.openid
 
 import at.asitplus.catching
+import at.asitplus.openid.AttestationChallengeResponse
+import at.asitplus.openid.PushedAuthenticationResponseParameters
 import at.asitplus.openid.RequestParameters
 import at.asitplus.openid.TokenIntrospectionRequest
 import at.asitplus.openid.TokenRequestParameters
 import at.asitplus.signum.indispensable.josef.JwsAlgorithm
+import at.asitplus.signum.indispensable.josef.io.joseCompliantSerializer
 import at.asitplus.testballoon.matrix.matrixSuite
 import at.asitplus.wallet.lib.agent.EphemeralKeyWithSelfSignedCert
 import at.asitplus.wallet.lib.agent.EphemeralKeyWithoutCert
@@ -20,12 +23,15 @@ import at.asitplus.wallet.lib.ktor.openid.TestUtils.respond
 import at.asitplus.wallet.lib.ktor.openid.TestUtils.respondIncludingDpopNonce
 import at.asitplus.wallet.lib.ktor.openid.TestUtils.respondOAuth2Error
 import at.asitplus.wallet.lib.oauth2.AttestationBasedClientAuthenticationService
+import at.asitplus.wallet.lib.oauth2.DPoPNonce
 import at.asitplus.wallet.lib.oauth2.OAuth2Client
+import at.asitplus.wallet.lib.oauth2.OAuthClientAttestationChallenge
 import at.asitplus.wallet.lib.oauth2.SimpleAuthorizationService
 import at.asitplus.wallet.lib.oauth2.TokenService
 import at.asitplus.wallet.lib.oidvci.BuildClientAttestationJwt
 import at.asitplus.wallet.lib.oidvci.CredentialAuthorizationServiceStrategy
 import at.asitplus.wallet.lib.oidvci.CredentialIssuer
+import at.asitplus.wallet.lib.oidvci.OAuth2Exception
 import at.asitplus.wallet.lib.oidvci.decodeFromPostBody
 import at.asitplus.wallet.lib.oidvci.decodeFromUrlQuery
 import io.github.aakira.napier.Napier
@@ -47,6 +53,8 @@ val OAuth2KtorClientTest by matrixSuite {
         val authorizationService: SimpleAuthorizationService,
         val credentialIssuer: CredentialIssuer,
         val client: OAuth2KtorClient,
+        val issuedAttestationChallenges: List<String>,
+        val receivedPopChallenges: List<String?>,
     )
 
     fun setup(
@@ -54,12 +62,16 @@ val OAuth2KtorClientTest by matrixSuite {
         requestObjectSigningAlgorithms: Set<JwsAlgorithm.Signature>?,
         requirePAR: Boolean,
         captureAttestationInput: ((OAuth2KtorClient.LoadInstanceAttestationInput) -> Unit)? = null,
+        serveChallengeEndpoint: Boolean = true,
+        requireChallengeRetry: Boolean = false,
+        provideChallengeOnParSuccess: Boolean = false,
     ): Context {
         val clientAuthKeyMaterial = EphemeralKeyWithoutCert()
         val authorizationEndpointPath = "/authorize"
         val tokenEndpointPath = "/token"
         val introspectionEndpointPath = "/introspect"
         val parEndpointPath = "/par"
+        val challengeEndpointPath = "/challenge"
         val publicContext = "https://issuer.example.com"
         val authorizationService = SimpleAuthorizationService(
             strategy = strategy,
@@ -82,13 +94,55 @@ val OAuth2KtorClientTest by matrixSuite {
             authorizationService = authorizationService,
             credentialSchemes = AttributeIndex.schemeSet,
         )
+        val issuedAttestationChallenges = mutableListOf<String>()
+        val receivedPopChallenges = mutableListOf<String?>()
+        var challengeRetryRequired = requireChallengeRetry
         val mockEngine = MockEngine { request ->
             when {
+                request.url.fullPath.startsWith(challengeEndpointPath) && serveChallengeEndpoint -> {
+                    val response = authorizationService.attestationChallenge().getOrThrow().shouldNotBeNull()
+                    issuedAttestationChallenges += response.attestationChallenge
+                    respond(
+                        joseCompliantSerializer.encodeToString(AttestationChallengeResponse.serializer(), response),
+                        headers = headers {
+                            append(HttpHeaders.ContentType, ContentType.Application.Json.toString())
+                            append(HttpHeaders.CacheControl, "no-store")
+                        },
+                    )
+                }
+
                 request.url.fullPath.startsWith(parEndpointPath) -> {
+                    receivedPopChallenges += request.toRequestInfo().clientAttestationPop?.payload?.challenge
+                    if (challengeRetryRequired) {
+                        challengeRetryRequired = false
+                        val challenge = authorizationService.attestationChallenge().getOrThrow().shouldNotBeNull()
+                            .attestationChallenge
+                            .also { issuedAttestationChallenges += it }
+                        return@MockEngine respondOAuth2Error(OAuth2Exception.UseAttestationChallenge(challenge))
+                    }
                     val requestBody = request.body.toByteArray().decodeToString()
                     val authnRequest: RequestParameters = requestBody.decodeFromPostBody()
                     authorizationService.parWithDpopNonce(authnRequest, request.toRequestInfo()).fold(
-                        onSuccess = { respondIncludingDpopNonce(it) },
+                        onSuccess = {
+                            if (provideChallengeOnParSuccess) {
+                                val challenge = authorizationService.attestationChallenge().getOrThrow().shouldNotBeNull()
+                                    .attestationChallenge
+                                    .also { issuedAttestationChallenges += it }
+                                respond(
+                                    joseCompliantSerializer.encodeToString(
+                                        PushedAuthenticationResponseParameters.serializer(),
+                                        it.response,
+                                    ),
+                                    headers = headers {
+                                        append(HttpHeaders.ContentType, ContentType.Application.Json.toString())
+                                        it.dpopNonce?.let { append(HttpHeaders.DPoPNonce, it) }
+                                        append(HttpHeaders.OAuthClientAttestationChallenge, challenge)
+                                    },
+                                )
+                            } else {
+                                respondIncludingDpopNonce(it)
+                            }
+                        },
                         onFailure = { respondOAuth2Error(it) }
                     )
                 }
@@ -107,6 +161,7 @@ val OAuth2KtorClientTest by matrixSuite {
                 }
 
                 request.url.fullPath.startsWith(tokenEndpointPath) -> {
+                    receivedPopChallenges += request.toRequestInfo().clientAttestationPop?.payload?.challenge
                     val requestBody = request.body.toByteArray().decodeToString()
                     val params: TokenRequestParameters = requestBody.decodeFromPostBody<TokenRequestParameters>()
                     authorizationService.tokenWithDpopNonce(params, request.toRequestInfo()).fold(
@@ -116,6 +171,7 @@ val OAuth2KtorClientTest by matrixSuite {
                 }
 
                 request.url.fullPath.startsWith(introspectionEndpointPath) -> {
+                    receivedPopChallenges += request.toRequestInfo().clientAttestationPop?.payload?.challenge
                     val requestBody = request.body.toByteArray().decodeToString()
                     val params: TokenIntrospectionRequest =
                         requestBody.decodeFromPostBody<TokenIntrospectionRequest>()
@@ -150,7 +206,9 @@ val OAuth2KtorClientTest by matrixSuite {
                 keyMaterial = clientAuthKeyMaterial,
                 oAuth2Client = OAuth2Client(clientId = clientId),
                 randomSource = RandomSource.Default,
-            )
+            ),
+            issuedAttestationChallenges = issuedAttestationChallenges,
+            receivedPopChallenges = receivedPopChallenges,
         )
     }
 
@@ -277,6 +335,93 @@ val OAuth2KtorClientTest by matrixSuite {
                 it.credentialIssuer shouldBe credentialIssuer.metadata.credentialIssuer
                 it.preferredClientStatusPeriod shouldBe credentialIssuer.metadata.preferredClientStatusPeriod
             }
+        }
+    }
+
+    test("fetches advertised attestation challenge for the PAR PoP") {
+        with(setup(strategy, setOf(JwsAlgorithm.Signature.ES256), requirePAR = true)) {
+            client.startAuthorization(
+                oauthMetadata = authorizationService.metadata(),
+                authorizationServer = authorizationService.publicContext,
+                scope = requestedScope,
+            ).getOrThrow()
+
+            receivedPopChallenges.single() shouldBe issuedAttestationChallenges.single()
+        }
+    }
+
+    test("fetches a fresh attestation challenge for every request") {
+        with(setup(strategy, setOf(JwsAlgorithm.Signature.ES256), requirePAR = true)) {
+            val authorization = client.startAuthorization(
+                oauthMetadata = authorizationService.metadata(),
+                authorizationServer = authorizationService.publicContext,
+                scope = requestedScope,
+            ).getOrThrow()
+            val httpClient = HttpClient(mockEngine) { followRedirects = false }
+            val redirect = httpClient.get(authorization.url).headers[HttpHeaders.Location].shouldNotBeNull()
+
+            client.requestTokenWithAuthCode(
+                oauthMetadata = authorizationService.metadata(),
+                url = redirect,
+                authorizationServer = authorizationService.publicContext,
+                state = authorization.state,
+                scope = requestedScope,
+                authorizationDetails = setOf(),
+            ).getOrThrow()
+
+            // A challenge is single-use on the server, so PAR and token must not share one
+            receivedPopChallenges shouldBe issuedAttestationChallenges
+            receivedPopChallenges.distinct() shouldBe receivedPopChallenges
+        }
+    }
+
+    test("retries PAR once with attestation challenge from error response") {
+        with(
+            setup(
+                strategy = strategy,
+                requestObjectSigningAlgorithms = setOf(JwsAlgorithm.Signature.ES256),
+                requirePAR = true,
+                serveChallengeEndpoint = false,
+                requireChallengeRetry = true,
+            )
+        ) {
+            client.startAuthorization(
+                oauthMetadata = authorizationService.metadata(),
+                authorizationServer = authorizationService.publicContext,
+                scope = requestedScope,
+            ).getOrThrow()
+
+            receivedPopChallenges shouldBe listOf(null, issuedAttestationChallenges.single())
+        }
+    }
+
+    test("uses attestation challenge from PAR response for token request") {
+        with(
+            setup(
+                strategy = strategy,
+                requestObjectSigningAlgorithms = setOf(JwsAlgorithm.Signature.ES256),
+                requirePAR = true,
+                provideChallengeOnParSuccess = true,
+            )
+        ) {
+            val authorization = client.startAuthorization(
+                oauthMetadata = authorizationService.metadata(),
+                authorizationServer = authorizationService.publicContext,
+                scope = requestedScope,
+            ).getOrThrow()
+            val httpClient = HttpClient(mockEngine) { followRedirects = false }
+            val redirect = httpClient.get(authorization.url).headers[HttpHeaders.Location].shouldNotBeNull()
+
+            client.requestTokenWithAuthCode(
+                oauthMetadata = authorizationService.metadata(),
+                url = redirect,
+                authorizationServer = authorizationService.publicContext,
+                state = authorization.state,
+                scope = requestedScope,
+                authorizationDetails = setOf(),
+            ).getOrThrow()
+
+            receivedPopChallenges shouldBe issuedAttestationChallenges
         }
     }
 }

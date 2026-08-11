@@ -2,6 +2,7 @@ package at.asitplus.wallet.lib.ktor.openid
 
 import at.asitplus.catching
 import at.asitplus.iso.IssuerSignedItem
+import at.asitplus.openid.AttestationChallengeResponse
 import at.asitplus.openid.IssuerMetadata
 import at.asitplus.openid.OAuth2AuthorizationServerMetadata
 import at.asitplus.openid.OidcUserInfo
@@ -138,6 +139,13 @@ object TestUtils {
 
     fun MockRequestHandleScope.respond(
         result: PushedAuthenticationResponseParameters
+    ): HttpResponseData = respond(
+        joseCompliantSerializer.encodeToString(result),
+        headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString())
+    )
+
+    fun MockRequestHandleScope.respond(
+        result: AttestationChallengeResponse?
     ): HttpResponseData = respond(
         joseCompliantSerializer.encodeToString(result),
         headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString())

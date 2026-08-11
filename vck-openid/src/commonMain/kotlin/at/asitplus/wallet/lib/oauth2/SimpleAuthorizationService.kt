@@ -114,7 +114,7 @@ class SimpleAuthorizationService @JvmOverloads constructor(
     private val introspectionEndpointPath: String = "/introspect",
     /**
      * Used to build [OAuth2AuthorizationServerMetadata.challengeEndpointUrl], i.e. implementers need to forward requests
-     * to that URI (which starts with [publicContext]) to [challenge].
+     * to that URI (which starts with [publicContext]) to [attestationChallenge].
      */
     private val challengeEndpointPath: String = "/challenge",
     /** Associates issuer_state with credential offers. */
@@ -206,8 +206,10 @@ class SimpleAuthorizationService @JvmOverloads constructor(
      * See
      * [OAuth 2.0 Attestation-Based Client Authentication](https://www.ietf.org/archive/id/draft-ietf-oauth-attestation-based-client-auth-10.html#name-challenges)
      */
-    suspend fun attestationChallenge() = clientAuthenticationService.getAttestationChallenge()?.let {
-        AttestationChallengeResponse(attestationChallenge = it)
+    suspend fun attestationChallenge(): KmmResult<AttestationChallengeResponse?> = catching {
+        clientAuthenticationService.getAttestationChallenge()?.let {
+            AttestationChallengeResponse(attestationChallenge = it)
+        }
     }
 
     /**
@@ -317,7 +319,7 @@ class SimpleAuthorizationService @JvmOverloads constructor(
         val actualRequest = request.extractPushedRequestParams()
         Napier.i("par called with $actualRequest")
         // TODO bind PAR request state, authorization codes and refresh tokens to the authenticated key
-        clientAuthenticationService.authenticateClient(httpRequest, actualRequest.clientId)
+        clientAuthenticationService.authenticateClient(httpRequest, actualRequest.clientId).getOrThrow()
         // PAR stores the request for later authorization. issuer_state is single-use and must only be consumed
         // when /authorize is executed with the referenced request_uri.
         actualRequest.validate(validateIssuerState = false)
@@ -473,7 +475,7 @@ class SimpleAuthorizationService @JvmOverloads constructor(
         httpRequest: RequestInfo?,
     ): KmmResult<TokenResponseParameters> = catching {
         Napier.i("token called with $request")
-        clientAuthenticationService.authenticateClient(httpRequest, request.clientId)
+        clientAuthenticationService.authenticateClient(httpRequest, request.clientId).getOrThrow()
         if (request.grantType == OpenIdConstants.GRANT_TYPE_TOKEN_EXCHANGE) {
             val userInfoEndpoint = metadata().userInfoEndpoint
                 ?: throw InvalidGrant("token_exchange requires userInfoEndpoint")
@@ -546,8 +548,6 @@ class SimpleAuthorizationService @JvmOverloads constructor(
         val response = token(request, httpRequest).getOrThrow()
         ResponseWithDpopNonce(response, tokenService.dpopNonce())
     }
-
-    // TODO Challenge endpoint for Attestation-Based Client Auth
 
     private fun validateCodeChallenge(code: String, codeVerifier: String?, codeChallenge: String) {
         if (codeVerifier == null) {
@@ -670,7 +670,7 @@ class SimpleAuthorizationService @JvmOverloads constructor(
         httpRequest: RequestInfo?,
     ): KmmResult<TokenIntrospectionResult> = catching {
         // TODO Which client_id to pass?
-        clientAuthenticationService.authenticateClient(httpRequest, null)
+        clientAuthenticationService.authenticateClient(httpRequest, null).getOrThrow()
         val response = catchingUnwrapped {
             tokenService.verification.getTokenInfo(request.token)
         }.fold(

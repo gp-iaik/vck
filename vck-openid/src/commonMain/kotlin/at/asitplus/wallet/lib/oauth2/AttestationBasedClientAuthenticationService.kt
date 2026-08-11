@@ -5,6 +5,7 @@ import at.asitplus.catching
 import at.asitplus.openid.OAuth2AuthorizationServerMetadata
 import at.asitplus.openid.OpenIdConstants
 import at.asitplus.openid.OpenIdConstants.AUTH_METHOD_ATTEST_JWT_CLIENT_AUTH
+import at.asitplus.signum.indispensable.CryptoPublicKey
 import at.asitplus.signum.indispensable.josef.JsonWebToken
 import at.asitplus.signum.indispensable.josef.JwsAlgorithm
 import at.asitplus.signum.indispensable.josef.JwsCompactTyped
@@ -20,6 +21,7 @@ import at.asitplus.wallet.lib.oauth2.SimpleAuthorizationService.Companion.DEFAUL
 import at.asitplus.wallet.lib.oidvci.OAuth2Exception
 import at.asitplus.wallet.lib.oidvci.OAuth2Exception.InvalidClient
 import at.asitplus.wallet.lib.oidvci.OAuth2Exception.UseAttestationChallenge
+import at.asitplus.wallet.lib.oidvci.OAuth2Exception.UseFreshAttestation
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.jvm.JvmOverloads
 import kotlin.time.Clock
@@ -56,6 +58,8 @@ class AttestationBasedClientAuthenticationService @JvmOverloads constructor(
     private val clock: Clock = Clock.System,
     /** Time leeway for verification of WIA and WIA PoP timestamps. */
     private val timeLeeway: Duration = 5.minutes,
+    /** Maximum age of WIA PoP JWTs. */
+    private val maxAgePoP: Duration = 10.minutes,
     /** Identifier of this authorization server, to verify `aud` of incoming PoP JWTs. */
     private val issuerIdentifier: String? = null,
     /** Used for [OAuth2AuthorizationServerMetadata.clientAttestationSigningAlgValuesSupportedStrings] */
@@ -73,14 +77,13 @@ class AttestationBasedClientAuthenticationService @JvmOverloads constructor(
         get() = supportedSigningAlgorithms.map { it.identifier }.toSet()
 
     override val supportedPopMethods: Set<OpenIdConstants.ClientAttestationPopMethod>
-        get() = setOf(OpenIdConstants.ClientAttestationPopMethod.None)
+        get() = setOf(OpenIdConstants.ClientAttestationPopMethod.AttestationPopJwt)
 
     override suspend fun getAttestationChallenge(): String = nonceService.provideNonce()
 
     /**
      * Authenticates the client as defined from a client attestation JWT.
      */
-    @Throws(InvalidClient::class, CancellationException::class)
     override suspend fun authenticateClient(
         httpRequest: RequestInfo?,
         clientId: String?,
@@ -102,13 +105,13 @@ class AttestationBasedClientAuthenticationService @JvmOverloads constructor(
             throw InvalidClient("client attestation not verified")
         }
 
-        instanceAttestationPopJwt.validateWalletInstanceAttestationPop(instanceAttestation.payload.subject)
         val cnf = instanceAttestation.payload.confirmationClaim
             ?: throw InvalidClient("client attestation has no cnf")
         if (!verifyJwsSignatureWithCnf(instanceAttestationPopJwt.jws, cnf)) {
             throw InvalidClient("client attestation PoP JWT not verified")
         }
 
+        instanceAttestationPopJwt.validateWalletInstanceAttestationPop(instanceAttestation.payload.subject)
         Success
     }
 
@@ -124,9 +127,6 @@ class AttestationBasedClientAuthenticationService @JvmOverloads constructor(
         ) {
             throw InvalidClient("unsupported client attestation alg: ${jws.jwsHeader.algorithm}")
         }
-        if (payload.issuer != null) {
-            throw InvalidClient("client attestation must not contain iss")
-        }
         if (payload.subject == null) {
             throw InvalidClient("client attestation has no sub")
         }
@@ -136,13 +136,13 @@ class AttestationBasedClientAuthenticationService @JvmOverloads constructor(
         val issuedAt = payload.issuedAt ?: throw InvalidClient("client attestation has no iat")
         val expiration = payload.expiration ?: throw InvalidClient("client attestation has no exp")
         if (issuedAt > (clock.now() + timeLeeway)) {
-            throw InvalidClient("client attestation iat in future: $issuedAt")
+            throw UseFreshAttestation("client attestation iat in future: $issuedAt")
         }
         if (expiration < (clock.now() - timeLeeway)) {
-            throw InvalidClient("client attestation expired: $expiration")
+            throw UseFreshAttestation("client attestation expired: $expiration")
         }
         if (expiration - issuedAt >= 24.hours) {
-            throw InvalidClient("client attestation lifetime must be less than 24 hours")
+            throw UseFreshAttestation("client attestation lifetime must be less than 24 hours")
         }
         if (payload.walletName.isNullOrBlank()) {
             throw InvalidClient("client attestation has no wallet_name")
@@ -157,13 +157,16 @@ class AttestationBasedClientAuthenticationService @JvmOverloads constructor(
         if (clientStatus.expiration < (clock.now() - timeLeeway)) {
             throw InvalidClient("client_status expiration in past: ${clientStatus.expiration}")
         }
-        if (payload.confirmationClaim == null) {
-            // TODO Validate this is an asymmetric key
-            throw InvalidClient("client attestation has no cnf")
+        val confirmationKey = payload.confirmationClaim?.jsonWebKey?.toCryptoPublicKey()?.getOrNull()
+            ?: throw InvalidClient("client attestation has no cnf")
+        if (confirmationKey !is CryptoPublicKey.EC && confirmationKey !is CryptoPublicKey.RSA) {
+            throw InvalidClient("client attestation confirmation key is not asymmetric")
         }
     }
 
-    private suspend fun JwsCompactTyped<JsonWebToken>.validateWalletInstanceAttestationPop(clientId: String?) {
+    private suspend fun JwsCompactTyped<JsonWebToken>.validateWalletInstanceAttestationPop(
+        attestationSubject: String?
+    ) {
         if (jws.jwsHeader.type != JwsContentTypeConstants.CLIENT_ATTESTATION_POP_JWT) {
             throw InvalidClient("invalid client attestation PoP typ: ${jws.jwsHeader.type}")
         }
@@ -172,34 +175,41 @@ class AttestationBasedClientAuthenticationService @JvmOverloads constructor(
         ) {
             throw InvalidClient("unsupported client attestation PoP alg: ${jws.jwsHeader.algorithm}")
         }
-        if (payload.issuer == null || payload.issuer != clientId) {
-            throw InvalidClient("client attestation PoP iss not equal to client_id")
-        }
         if (issuerIdentifier != null && payload.audience != issuerIdentifier) {
             throw InvalidClient(
                 "client attestation PoP aud '${payload.audience}' does not match issuer '$issuerIdentifier'"
             )
         }
-        if (payload.issuedAt == null || payload.issuedAt!! > (clock.now() + timeLeeway)) {
-            throw InvalidClient("client attestation PoP iat in future: ${payload.issuedAt}")
+        val issuedAt = payload.issuedAt
+            ?: throw InvalidClient("client attestation PoP has no iat")
+        val expiration = payload.expiration // not required!
+        if (issuedAt > (clock.now() + timeLeeway)) {
+            throw InvalidClient("client attestation PoP iat in future: $issuedAt")
         }
-        if (payload.expiration == null || payload.expiration!! < (clock.now() - timeLeeway)) {
-            throw InvalidClient("client attestation PoP expired: ${payload.expiration}")
+        if (issuedAt < (clock.now() - maxAgePoP - timeLeeway)) {
+            throw InvalidClient("client attestation PoP issued too long ago: $issuedAt")
+        }
+        if (expiration != null && expiration < (clock.now() - timeLeeway)) {
+            throw InvalidClient("client attestation PoP expired: $expiration")
+        }
+        if (payload.jwtId == null) {
+            throw InvalidClient("client attestation PoP has no jti")
+        }
+        if (payload.issuer != null && attestationSubject != null && payload.issuer != attestationSubject) {
+            throw InvalidClient("client attestation PoP issuer not equal to attestation subject")
         }
         if (payload.nonce == null && payload.challenge == null) {
-            throw UseAttestationChallenge("client attestation PoP missing challenge/nonce")
+            throw UseAttestationChallenge(nonceService.provideNonce(), "client attestation PoP missing challenge/nonce")
         }
         payload.nonce?.let { nonce ->
             if (!nonceService.verifyAndRemoveNonce(nonce)) {
-                throw UseAttestationChallenge("client attestation PoP nonce invalid")
+                throw UseAttestationChallenge(nonceService.provideNonce(), "client attestation PoP nonce invalid")
             }
         } ?: payload.challenge?.let { challenge ->
             if (!nonceService.verifyAndRemoveNonce(challenge)) {
-                throw UseAttestationChallenge("client attestation PoP challenge invalid")
+                throw UseAttestationChallenge(nonceService.provideNonce(), "client attestation PoP challenge invalid")
             }
-        } ?: throw UseAttestationChallenge("client attestation PoP challenge missing")
-        // TODO Verify other fields
-        // TODO Validate signature against CNF key
+        } ?: throw UseAttestationChallenge(nonceService.provideNonce(), "client attestation PoP challenge missing")
     }
 
 }

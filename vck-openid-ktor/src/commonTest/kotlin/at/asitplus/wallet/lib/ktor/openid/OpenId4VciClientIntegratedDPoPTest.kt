@@ -75,6 +75,7 @@ val OpenId4VciClientIntegratedDPoPTest by matrixSuite {
             val credentialEndpointPath = "/credential"
             val nonceEndpointPath = "/nonce"
             val parEndpointPath = "/par"
+            val challengeEndpointPath = "/challenge"
             val publicContext = "https://issuer.example.com"
             val authorizationService = SimpleAuthorizationService(
                 strategy = CredentialAuthorizationServiceStrategy(credentialSchemes),
@@ -82,6 +83,7 @@ val OpenId4VciClientIntegratedDPoPTest by matrixSuite {
                 authorizationEndpointPath = authorizationEndpointPath,
                 tokenEndpointPath = tokenEndpointPath,
                 pushedAuthorizationRequestEndpointPath = parEndpointPath,
+                challengeEndpointPath = challengeEndpointPath,
                 clientAuthenticationService = AttestationBasedClientAuthenticationService(),
                 tokenService = TokenService.jwt(
                     issueRefreshTokens = true
@@ -103,10 +105,10 @@ val OpenId4VciClientIntegratedDPoPTest by matrixSuite {
             val mockEngine = MockEngine { request ->
                 when {
                     request.url.rawSegments.drop(1) == OpenIdConstants.WellKnownPaths.CredentialIssuer ->
-                        this.respond(credentialIssuer.metadata)
+                        respond(credentialIssuer.metadata)
 
                     request.url.rawSegments.drop(1) == OpenIdConstants.WellKnownPaths.OauthAuthorizationServer ->
-                        this.respond(authorizationService.metadata())
+                        respond(authorizationService.metadata())
 
                     request.url.fullPath.startsWith(parEndpointPath) -> {
                         val requestBody = request.body.toByteArray().decodeToString()
@@ -125,7 +127,7 @@ val OpenId4VciClientIntegratedDPoPTest by matrixSuite {
                             if (requestBody.isEmpty()) queryParameters.decodeFromUrlQuery<RequestParameters>()
                             else requestBody.decodeFromPostBody<RequestParameters>()
                         authorizationService.authorize(authnRequest) { this.catching { TestUtils.dummyUser() } }.fold(
-                            onSuccess = { this.respondRedirect(it.url) },
+                            onSuccess = { respondRedirect(it.url) },
                             onFailure = { fail("$authorizationEndpointPath should not return an error") }
                         )
                     }
@@ -140,7 +142,11 @@ val OpenId4VciClientIntegratedDPoPTest by matrixSuite {
                     }
 
                     request.url.fullPath.startsWith(nonceEndpointPath) -> {
-                        this.respond(credentialIssuer.nonceWithDpopNonce().getOrThrow())
+                        respond(credentialIssuer.nonceWithDpopNonce().getOrThrow())
+                    }
+
+                    request.url.fullPath.startsWith(challengeEndpointPath) -> {
+                        respond(authorizationService.attestationChallenge().getOrThrow())
                     }
 
                     request.url.fullPath.startsWith(credentialEndpointPath) -> {
@@ -156,12 +162,12 @@ val OpenId4VciClientIntegratedDPoPTest by matrixSuite {
                             ),
                             request = request.toRequestInfo(),
                         ).fold(
-                            onSuccess = { this.respond(it) },
+                            onSuccess = { respond(it) },
                             onFailure = { fail("$credentialEndpointPath should not return an error") }
                         )
                     }
 
-                    else -> this.respondError(HttpStatusCode.NotFound)
+                    else -> respondError(HttpStatusCode.NotFound)
                         .also { Napier.w("NOT MATCHED ${request.url.fullPath}") }
                 }
             }
