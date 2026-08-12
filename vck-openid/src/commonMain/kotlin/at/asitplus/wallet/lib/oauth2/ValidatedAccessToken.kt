@@ -13,6 +13,8 @@ data class ValidatedAccessToken(
     val userInfoExtended: OidcUserInfoExtended? = null,
     val authorizationDetails: Set<AuthorizationDetails>? = null,
     val scope: String? = null,
+    /** `jti` of the access token, if it is a JWT, to look up the user info stored when it was issued. */
+    val jwtId: String? = null,
 ) {
     fun toTokenInfo() = TokenInfo(
         token = token,
@@ -34,5 +36,6 @@ internal fun OpenId4VciAccessToken.toValidatedAccessToken(
     token = accessToken,
     userInfoExtended = userInfo,
     authorizationDetails = authorizationDetails?.filterIsInstance<OpenIdAuthorizationDetails>()?.toSet(),
-    scope = scope
+    scope = scope,
+    jwtId = jwtId,
 )

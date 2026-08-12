@@ -621,11 +621,10 @@ class SimpleAuthorizationService @JvmOverloads constructor(
         authorizationHeader: String,
         httpRequest: RequestInfo?,
     ): KmmResult<JsonObject> = catching {
-        tokenService.verification.validateAccessToken(authorizationHeader, httpRequest).getOrThrow()
-        with(tokenService.readUserInfo(authorizationHeader, httpRequest)) {
-            userInfoExtended?.jsonObject
-                ?: throw InvalidGrant("no user info found for $authorizationHeader")
-        }
+        // The user info comes out of the validation itself, so it must not be looked up a second time
+        tokenService.validateAccessToken(authorizationHeader, httpRequest).getOrThrow()
+            .userInfoExtended?.jsonObject
+            ?: throw InvalidGrant("no user info found for $authorizationHeader")
     }
 
     /**
@@ -701,9 +700,8 @@ class SimpleAuthorizationService @JvmOverloads constructor(
     override suspend fun validateAccessToken(
         authorizationHeader: String,
         httpRequest: RequestInfo?,
-    ): KmmResult<ValidatedAccessToken> = catching {
-        tokenService.verification.validateAccessToken(authorizationHeader, httpRequest).getOrThrow()
-    }
+    ): KmmResult<ValidatedAccessToken> =
+        tokenService.validateAccessToken(authorizationHeader, httpRequest)
 
     override suspend fun getDpopNonce() = tokenService.dpopNonce()
 }

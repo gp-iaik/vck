@@ -1,5 +1,6 @@
 package at.asitplus.wallet.lib.oauth2
 
+import at.asitplus.KmmResult
 import at.asitplus.openid.OpenIdConstants.TokenTypes
 import at.asitplus.openid.TokenRequestParameters
 import at.asitplus.openid.TokenResponseParameters
@@ -23,6 +24,16 @@ interface TokenService {
     val verification: TokenVerificationService
     val dpopSigningAlgValuesSupportedStrings: Set<String>?
     val supportsRefreshTokens: Boolean
+
+    /**
+     * Validates the access token from [authorizationHeader] and returns what it authorizes.
+     * Implementations that issued the token themselves also fill [ValidatedAccessToken.userInfoExtended],
+     * so callers do not need a second lookup with [readUserInfo].
+     */
+    suspend fun validateAccessToken(
+        authorizationHeader: String,
+        httpRequest: RequestInfo?,
+    ): KmmResult<ValidatedAccessToken> = verification.validateAccessToken(authorizationHeader, httpRequest)
 
     /**
      * Provides information about the access token from [authorizationHeader], if it has been issued by [generation].

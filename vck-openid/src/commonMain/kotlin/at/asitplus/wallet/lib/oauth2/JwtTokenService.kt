@@ -1,5 +1,6 @@
 package at.asitplus.wallet.lib.oauth2
 
+import at.asitplus.KmmResult
 import at.asitplus.catching
 import at.asitplus.openid.OpenIdConstants
 import at.asitplus.signum.indispensable.josef.JwsCompactTyped
@@ -15,6 +16,21 @@ class JwtTokenService(
     override val dpopSigningAlgValuesSupportedStrings: Set<String>?,
     override val supportsRefreshTokens: Boolean,
 ) : TokenService {
+
+    /**
+     * Validates the access token, and — since [generation] issued it — resolves the user info stored back then,
+     * so callers do not need a second lookup with [readUserInfo].
+     */
+    override suspend fun validateAccessToken(
+        authorizationHeader: String,
+        httpRequest: RequestInfo?,
+    ): KmmResult<ValidatedAccessToken> = catching {
+        val validated = verification.validateAccessToken(authorizationHeader, httpRequest).getOrThrow()
+        validated.jwtId
+            ?.let { generation.getUserInfoExtended(it) }
+            ?.let { validated.copy(userInfoExtended = it) }
+            ?: validated
+    }
 
     /**
      * Provides information about the access token from [authorizationHeader], if it has been issued by [generation].
