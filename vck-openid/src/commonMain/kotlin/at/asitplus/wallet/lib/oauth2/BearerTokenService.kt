@@ -13,6 +13,7 @@ class BearerTokenService(
     override val supportsRefreshTokens: Boolean,
 ) : TokenService {
 
+    @Suppress("OVERRIDE_DEPRECATION")
     override suspend fun readUserInfo(
         authorizationHeader: String,
         request: RequestInfo?,

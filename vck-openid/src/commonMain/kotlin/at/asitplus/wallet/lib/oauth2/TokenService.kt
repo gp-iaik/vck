@@ -37,8 +37,14 @@ interface TokenService {
 
     /**
      * Provides information about the access token from [authorizationHeader], if it has been issued by [generation].
-     * **Access token needs to be validated before (see [TokenVerificationService.validateAccessToken])**
+     *
+     * Does not prove possession of the key the token is bound to, i.e. does not validate the DPoP proof.
      */
+    @Deprecated(
+        "Superseded by validateAccessToken, which validates the token, including the DPoP proof, " +
+                "and returns the user info along with it",
+        ReplaceWith("validateAccessToken(authorizationHeader, request)")
+    )
     suspend fun readUserInfo(
         authorizationHeader: String,
         request: RequestInfo?,

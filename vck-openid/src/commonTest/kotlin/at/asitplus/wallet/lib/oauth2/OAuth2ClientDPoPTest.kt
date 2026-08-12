@@ -3,15 +3,18 @@ package at.asitplus.wallet.lib.oauth2
 import at.asitplus.catching
 import at.asitplus.openid.OidcUserInfo
 import at.asitplus.openid.OidcUserInfoExtended
+import at.asitplus.openid.OpenIdConstants
 import at.asitplus.openid.OpenIdConstants.TOKEN_TYPE_DPOP
 import at.asitplus.openid.RequestParameters
 import at.asitplus.openid.TokenIntrospectionRequest
 import at.asitplus.openid.TokenIntrospectionResponse
+import at.asitplus.openid.TokenResponseParameters
 import at.asitplus.signum.indispensable.josef.JwsCompactTyped
 import at.asitplus.signum.indispensable.josef.JsonWebToken
 import at.asitplus.testballoon.matrix.fixture
 import at.asitplus.testballoon.matrix.matrixSuite
 import at.asitplus.wallet.lib.agent.EphemeralKeyWithoutCert
+import at.asitplus.wallet.lib.agent.KeyMaterial
 import at.asitplus.wallet.lib.agent.RandomSource
 import at.asitplus.wallet.lib.jws.JwsContentTypeConstants
 import at.asitplus.wallet.lib.jws.JwsHeaderCertOrJwk
@@ -39,7 +42,8 @@ val OAuth2ClientDPoPTest by matrixSuite {
             val scope = randomString()
             val client = OAuth2Client()
             val user = OidcUserInfoExtended(OidcUserInfo(randomString()))
-            val tokenService = TokenService.jwt(issueRefreshTokens = true)
+            val issuerKey = EphemeralKeyWithoutCert()
+            val tokenService = TokenService.jwt(issueRefreshTokens = true, keyMaterial = issuerKey)
             val server = SimpleAuthorizationService(
                 strategy = DummyAuthorizationServiceStrategy(scope),
                 tokenService = tokenService,
@@ -72,6 +76,14 @@ val OAuth2ClientDPoPTest by matrixSuite {
                 RequestInfo(url = url, method = method, dpop = dpop)
             ).getOrThrow()
 
+            /** Signs an access token as the authorization server itself would, to forge token contents. */
+            suspend fun signAccessToken(payload: OpenId4VciAccessToken, key: KeyMaterial = issuerKey) =
+                SignJwt<OpenId4VciAccessToken>(key, JwsHeaderCertOrJwk())(
+                    JwsContentTypeConstants.OID4VCI_AT_JWT,
+                    payload,
+                    OpenId4VciAccessToken.serializer(),
+                ).getOrThrow()
+
             suspend fun getCode(state: String): String {
                 val authnRequest = client.createAuthRequestJar(
                     state = state,
@@ -84,8 +96,67 @@ val OAuth2ClientDPoPTest by matrixSuite {
                     .shouldNotBeNull()
                 return code
             }
+
+            @Suppress("DEPRECATION")
+            suspend fun getAccessToken(): TokenResponseParameters = server.token(
+                request = client.createTokenRequestParameters(
+                    state = state,
+                    authorization = OAuth2Client.AuthorizationForToken.Code(getCode(state)),
+                    scope = scope
+                ),
+                httpRequest = RequestInfo(
+                    url = tokenUrl,
+                    method = HttpMethod.Post,
+                    dpop = BuildDPoPHeader(
+                        signDpop = signDpop,
+                        url = tokenUrl,
+                        nonce = server.getDpopNonce(),
+                        randomSource = RandomSource.Default,
+                    )
+                )
+            ).getOrThrow()
         }
     } - {
+        test("getUserInfo returns user info for a valid access token") {
+            val token = it.getAccessToken()
+
+            @Suppress("DEPRECATION")
+            it.server.getUserInfo(
+                token.toHttpHeaderValue(),
+                RequestInfo(
+                    url = it.resourceUrl,
+                    method = HttpMethod.Post,
+                    dpop = BuildDPoPHeader(
+                        signDpop = it.signDpop,
+                        url = it.resourceUrl,
+                        accessToken = token.accessToken,
+                        nonce = it.server.getDpopNonce(),
+                        randomSource = RandomSource.Default,
+                    )
+                )
+            ).getOrThrow()
+        }
+
+        test("getUserInfo rejects an access token with an invalid signature") {
+            // The jti is readable from any observed access token, so user info must not be reachable by
+            // replaying it in a token this authorization server did not sign
+            val payload = JwsCompactTyped<OpenId4VciAccessToken>(it.getAccessToken().accessToken).payload
+            val forged = it.signAccessToken(payload, key = EphemeralKeyWithoutCert())
+
+            shouldThrow<OAuth2Exception.InvalidToken> {
+                it.server.getUserInfo("${OpenIdConstants.TOKEN_PREFIX_DPOP}$forged", null).getOrThrow()
+            }
+        }
+
+        test("getUserInfo rejects an expired access token") {
+            val payload = JwsCompactTyped<OpenId4VciAccessToken>(it.getAccessToken().accessToken).payload
+            val expired = it.signAccessToken(payload.copy(expiration = Clock.System.now() - 1.hours))
+
+            shouldThrow<OAuth2Exception.InvalidToken> {
+                it.server.getUserInfo("${OpenIdConstants.TOKEN_PREFIX_DPOP}$expired", null).getOrThrow()
+            }
+        }
+
         test("authorization code flow with DPoP") {
             val code = it.getCode(it.state)
             @Suppress("DEPRECATION")

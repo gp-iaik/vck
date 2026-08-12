@@ -58,6 +58,10 @@ Release 8.0.0 (unreleased):
     - Add method `attestationChallenge()` to `SimpleAuthorizationService` to deliver challenges for Attestation-Based Client Authentication
     - Support `use_client_attestation` errors and parse challenges from `OAuth-Client-Attestation-Challenge` in `OAuth2KtorClient`
     - Strengthen validation of DPoP proofs from [OAuth 2.0 Demonstrating Proof of Possession (DPoP)](https://datatracker.ietf.org/doc/html/rfc9449)
+    - Validate the access token in `SimpleAuthorizationService.getUserInfo()` before returning any user info, i.e. it now behaves the same as `userInfo()`. Previously the token was only parsed, so neither its signature, nor its expiration, nor the DPoP proof were verified
+    - Compare scopes as space-delimited values instead of substrings, when issuing access tokens in `SimpleAuthorizationService` and when authorizing credential requests in `CredentialIssuer`
+    - Authorize several credential requests with a single JWT access token
+    - Add `TokenService.validateAccessToken()`, which validates the access token and resolves the user info stored at issuance
 - Deprecations:
     - Remove code deprecated in 7.0.0, e.g. various `Iso180137AnnexC*` and related classes
     - Deprecate all classes used for Presentation Exchange requests and so on, e.g., `CredentialPresentationRequest.PresentationExchangeRequest` or `PresentationExchangeCredentialDisclosure` or `CredentialPresentation.PresentationExchangePresentation`
@@ -74,6 +78,7 @@ Release 8.0.0 (unreleased):
     - Deprecate `ClientAuthenticationService.verifyClientAttestationJwt`, which never validated the `x5c` it required; pass `VerifyJwsObjectTrustedCertificate` with the trusted wallet provider certificates as `verifyJwsObject` instead
     - Deprecate constructor in `RequestInfo` taking single values for some HTTP headers, replace with constructor taking in all HTTP headers
     - Deprecate constructor parameter `enforceClientAuthentication` in `AttestationBasedClientAuthenticationService` as the new default is `true`. Callers might use a `NoopClientAuthenticationService`
+    - Deprecate `TokenService.readUserInfo()`, since it does not prove possession of the key the access token is bound to. Replace with `TokenService.validateAccessToken()`, which validates the access token including the DPoP proof and returns the user info in `ValidatedAccessToken.userInfoExtended`
 - Refactorings:
     - In `MdocInputValidator` and `ValidatorMdoc` replace `verifyCoseSignatureWithKey` with a `VerifyCoseSignatureFun<MobileSecurityObject>`, which resolves the issuer key from the COSE headers itself. Consequently `MdocInputValidator.invoke()` and `ValidatorMdoc.verifyIsoCred()` lose their `issuerKey` parameter, `MdocInputValidationSummary.IntegrityValidationSummary.IntegrityValidationResult` loses its `issuerKey` property, and `IntegrityNotValidated` is removed
     - `ValidatorMdoc.verifyDocument()` no longer extracts the issuer certificate itself, but delegates to `MdocInputValidator` like the credential path does
@@ -85,6 +90,8 @@ Release 8.0.0 (unreleased):
     - In `NonceChallengeVerifier` add `consumeChallenge()`, which consumes the challenge of the request an authentication response refers to and returns a `NonceChallengeVerifier.ChallengeSession` to verify all presentations of that response with, as used by `OpenId4VpVerifier` and `DcApiVerifier`
     - Add main constructor to `RequestInfo` that takes in all HTTP headers for future extensions to client authentication methods
     - Rename existing `ClientAuthenticationService` to `AttestationBasedClientAuthenticationService` and extract an interface
+    - Return the validated token from `validateAccessToken()` in `TokenVerificationService` and `OAuth2AuthorizationServerAdapter` as `ValidatedAccessToken`, and move `validCredentialIdentifiers` from `TokenInfo` to `ValidatedAccessToken`
+    - Authorize credential requests in `CredentialIssuer` from the `ValidatedAccessToken`
  - Dependencies:
     - Update to [Signum 3.25.0](https://github.com/a-sit-plus/signum/releases/tag/3.25.0) for HPKE support
 

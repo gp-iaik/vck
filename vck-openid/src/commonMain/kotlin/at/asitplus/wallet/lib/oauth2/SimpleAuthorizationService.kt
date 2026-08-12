@@ -641,17 +641,13 @@ class SimpleAuthorizationService @JvmOverloads constructor(
 
     /**
      * Obtains a JSON object representing [at.asitplus.openid.OidcUserInfo] from the Authorization Server, and
-     * since we're implementing [OAuth2AuthorizationServerAdapter] here, this is the same as [userInfo].
+     * since we're implementing [OAuth2AuthorizationServerAdapter] here, this is the same as [userInfo],
+     * i.e. the access token is validated before any user info is returned.
      */
     override suspend fun getUserInfo(
         authorizationHeader: String,
         httpRequest: RequestInfo?,
-    ): KmmResult<JsonObject> = catching {
-        with(tokenService.readUserInfo(authorizationHeader, httpRequest)) {
-            userInfoExtended?.jsonObject
-                ?: throw InvalidGrant("no user info found for $authorizationHeader")
-        }
-    }
+    ): KmmResult<JsonObject> = userInfo(authorizationHeader, httpRequest)
 
     /**
      * Obtains information about the token, since we're in-memory here (as an [OAuth2AuthorizationServerAdapter],

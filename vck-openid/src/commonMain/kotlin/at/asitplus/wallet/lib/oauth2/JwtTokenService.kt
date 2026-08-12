@@ -3,7 +3,6 @@ package at.asitplus.wallet.lib.oauth2
 import at.asitplus.KmmResult
 import at.asitplus.catching
 import at.asitplus.openid.OpenIdConstants
-import at.asitplus.signum.indispensable.josef.JwsCompactTyped
 import at.asitplus.wallet.lib.jws.JwsContentTypeConstants
 import at.asitplus.wallet.lib.oidvci.OAuth2Exception.InvalidToken
 
@@ -36,13 +35,14 @@ class JwtTokenService(
      * Provides information about the access token from [authorizationHeader], if it has been issued by [generation].
      * **Access token needs to be validated before (see [TokenVerificationService.validateAccessToken])**
      */
+    @Suppress("OVERRIDE_DEPRECATION")
     override suspend fun readUserInfo(
         authorizationHeader: String,
         request: RequestInfo?,
     ): ValidatedAccessToken = if (authorizationHeader.startsWith(OpenIdConstants.TOKEN_TYPE_DPOP, ignoreCase = true)) {
         val accessToken = authorizationHeader.removePrefix(OpenIdConstants.TOKEN_PREFIX_DPOP).split(" ").last()
-        val tokenJwt = catching { JwsCompactTyped<OpenId4VciAccessToken>(accessToken) }
-            .getOrElse { throw InvalidToken("could not parse DPoP Token", it) }
+        // Verifies signature, typ, jti, nbf and exp; does not prove possession of the key the token is bound to
+        val tokenJwt = verification.validateToken(accessToken, JwsContentTypeConstants.OID4VCI_AT_JWT)
         val jwtId = tokenJwt.payload.jwtId
             ?: throw InvalidToken("access token not valid: $accessToken")
         with(tokenJwt.payload) {
