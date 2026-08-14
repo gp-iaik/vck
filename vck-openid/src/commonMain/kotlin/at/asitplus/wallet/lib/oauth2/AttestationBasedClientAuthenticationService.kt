@@ -11,18 +11,13 @@ import at.asitplus.signum.indispensable.josef.JwsAlgorithm
 import at.asitplus.signum.indispensable.josef.JwsCompactTyped
 import at.asitplus.wallet.lib.DefaultNonceService
 import at.asitplus.wallet.lib.NonceService
-import at.asitplus.wallet.lib.etsi.Success
 import at.asitplus.wallet.lib.jws.JwsContentTypeConstants
 import at.asitplus.wallet.lib.jws.VerifyJwsObject
 import at.asitplus.wallet.lib.jws.VerifyJwsObjectFun
 import at.asitplus.wallet.lib.jws.VerifyJwsSignatureWithCnf
 import at.asitplus.wallet.lib.jws.VerifyJwsSignatureWithCnfFun
 import at.asitplus.wallet.lib.oauth2.SimpleAuthorizationService.Companion.DEFAULT_WALLET_ATTESTATION_ALGORITHMS
-import at.asitplus.wallet.lib.oidvci.OAuth2Exception
-import at.asitplus.wallet.lib.oidvci.OAuth2Exception.InvalidClient
-import at.asitplus.wallet.lib.oidvci.OAuth2Exception.UseAttestationChallenge
-import at.asitplus.wallet.lib.oidvci.OAuth2Exception.UseFreshAttestation
-import kotlin.coroutines.cancellation.CancellationException
+import at.asitplus.wallet.lib.oidvci.OAuth2Exception.*
 import kotlin.jvm.JvmOverloads
 import kotlin.time.Clock
 import kotlin.time.Duration
@@ -38,8 +33,6 @@ import kotlin.time.Duration.Companion.minutes
  * * [EUDI TS3 Wallet Unit Attestation 1.5.2](https://github.com/eu-digital-identity-wallet/eudi-doc-standards-and-technical-specifications/blob/main/docs/technical-specifications/ts3-wallet-unit-attestation.md)
  */
 class AttestationBasedClientAuthenticationService @JvmOverloads constructor(
-    @Deprecated("Always enforces client auth ... if you don't want that, don't use this class")
-    private val enforceClientAuthentication: Boolean = false,
     /**
      * Used to verify client attestation JWTs. Client attestations are required to carry an `x5c`, so pass
      * [at.asitplus.wallet.lib.jws.VerifyJwsObjectTrustedCertificate] with the certificates of the trusted wallet
@@ -49,11 +42,6 @@ class AttestationBasedClientAuthenticationService @JvmOverloads constructor(
     private val verifyJwsObject: VerifyJwsObjectFun = VerifyJwsObject(),
     /** Used to verify client attestation JWTs */
     private val verifyJwsSignatureWithCnf: VerifyJwsSignatureWithCnfFun = VerifyJwsSignatureWithCnf(),
-    @Deprecated(
-        "Pass VerifyJwsObjectTrustedCertificate with the trusted wallet provider certificates as " +
-                "verifyJwsObject instead, which evaluates the x5c of the attestation against them."
-    )
-    private val verifyClientAttestationJwt: (suspend (JwsCompactTyped<JsonWebToken>) -> Boolean) = { true },
     /** Clock used to verify WIA and WIA PoP timestamps. */
     private val clock: Clock = Clock.System,
     /** Time leeway for verification of WIA and WIA PoP timestamps. */
@@ -87,7 +75,7 @@ class AttestationBasedClientAuthenticationService @JvmOverloads constructor(
     override suspend fun authenticateClient(
         httpRequest: RequestInfo?,
         clientId: String?,
-    ): KmmResult<Success> = catching {
+    ): KmmResult<AuthenticatedClient> = catching {
         val instanceAttestation = httpRequest?.clientAttestation
             ?: throw InvalidClient("client attestation header missing")
 
@@ -100,11 +88,6 @@ class AttestationBasedClientAuthenticationService @JvmOverloads constructor(
             throw InvalidClient("client attestation JWT not verified", it)
         }
 
-        @Suppress("DEPRECATION")
-        if (!verifyClientAttestationJwt.invoke(instanceAttestation)) {
-            throw InvalidClient("client attestation not verified")
-        }
-
         val cnf = instanceAttestation.payload.confirmationClaim
             ?: throw InvalidClient("client attestation has no cnf")
         if (!verifyJwsSignatureWithCnf(instanceAttestationPopJwt.jws, cnf)) {
@@ -112,7 +95,12 @@ class AttestationBasedClientAuthenticationService @JvmOverloads constructor(
         }
 
         instanceAttestationPopJwt.validateWalletInstanceAttestationPop(instanceAttestation.payload.subject)
-        Success
+        AuthenticatedClient(
+            clientId = instanceAttestation.payload.subject
+                ?: clientId // validation above should have caught that, but the compiler did not
+                ?: throw InvalidClient("No client_id given"),
+            publicKey = cnf.jsonWebKey?.toCryptoPublicKey()?.getOrThrow()
+        )
     }
 
     private fun JwsCompactTyped<JsonWebToken>.validateWalletInstanceAttestation(clientId: String?) {

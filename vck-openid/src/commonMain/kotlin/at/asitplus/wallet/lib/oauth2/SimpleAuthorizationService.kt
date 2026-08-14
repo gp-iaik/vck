@@ -7,7 +7,6 @@ import at.asitplus.iso.sha256
 import at.asitplus.openid.AttestationChallengeResponse
 import at.asitplus.openid.AuthenticationRequestParameters
 import at.asitplus.openid.AuthenticationResponseParameters
-import at.asitplus.openid.AuthorizationDetails
 import at.asitplus.openid.CredentialOffer
 import at.asitplus.openid.CredentialOfferGrants
 import at.asitplus.openid.CredentialOfferGrantsAuthCode
@@ -124,8 +123,8 @@ class SimpleAuthorizationService @JvmOverloads constructor(
     /** Associates issued refresh tokens with the auth request from the client. *Refresh tokens are usually long-lived!* */
     private val refreshTokenToAuthRequest: MapStore<String, ClientAuthRequest> =
         DefaultMapStore(lifetime = 30.days),
-    /** Associates the issued request_uri to the auth request from the client. */
-    private val requestUriToPushedAuthorizationRequest: MapStore<String, AuthenticationRequestParameters> = DefaultMapStore(),
+    /** Associates the issued `request_uri` sent to the client to the actual request from the client. */
+    private val requestUriToPushedAuthorizationRequest: MapStore<String, PushedAuthorizationRequest> = DefaultMapStore(),
     /** Service to create and validate access tokens. */
     private val tokenService: TokenService = TokenService.bearer(),
     /** Handles client authentication in [par] and [token]. Defaults to [NoopClientAuthenticationService]! */
@@ -318,13 +317,16 @@ class SimpleAuthorizationService @JvmOverloads constructor(
     ) = catching {
         val actualRequest = request.extractPushedRequestParams()
         Napier.i("par called with $actualRequest")
-        // TODO bind PAR request state, authorization codes and refresh tokens to the authenticated key
-        clientAuthenticationService.authenticateClient(httpRequest, actualRequest.clientId).getOrThrow()
+        val authenticatedClient = clientAuthenticationService
+            .authenticateClient(httpRequest, actualRequest.clientId).getOrThrow()
         // PAR stores the request for later authorization. issuer_state is single-use and must only be consumed
         // when /authorize is executed with the referenced request_uri.
         actualRequest.validate(validateIssuerState = false)
         val requestUri = "urn:ietf:params:oauth:request_uri:${uuid4()}".also {
-            requestUriToPushedAuthorizationRequest.put(it, actualRequest)
+            requestUriToPushedAuthorizationRequest.put(
+                it,
+                PushedAuthorizationRequest(actualRequest, authenticatedClient)
+            )
         }
         PushedAuthenticationResponseParameters(
             requestUri = requestUri,
@@ -364,24 +366,29 @@ class SimpleAuthorizationService @JvmOverloads constructor(
         input: RequestParameters,
         loadUserFun: OAuth2LoadUserFun,
     ) = catching {
-        val actualRequest = extractRequestForAuthorize(input).validate()
+        val (actualRequest, authenticatedClient) = extractRequestForAuthorize(input)
+            .let { it.first.validate() to it.second }
         val userInfo = loadUserFun(OAuth2LoadUserFunInput(actualRequest)).getOrElse {
             throw InvalidRequest("Could not load user info for request $input", it)
         }
         with(actualRequest) {
-            issueCodeForUserInfo(userInfo, state, codeChallenge, authorizationDetails, scope, redirectUrl!!)
+            issueCodeForUserInfo(userInfo, actualRequest, authenticatedClient)
                 .also { Napier.i("authorize returns $it") }
         }
     }
 
     internal suspend fun issueCodeForUserInfo(
         userInfo: OidcUserInfoExtended,
-        state: String?,
-        codeChallenge: String?,
-        authorizationDetails: Set<AuthorizationDetails>?,
-        scope: String?,
-        redirectUrl: String,
+        request: AuthenticationRequestParameters,
+        authenticatedClient: AuthenticatedClient?,
     ): AuthenticationResponseResult.Redirect {
+        val authorizedClientId = (request.clientId
+            ?: authenticatedClient?.clientId
+            ?: throw InvalidRequest("client_id not set"))
+        authenticatedClient?.let {
+            if (authenticatedClient.clientId != authorizedClientId)
+                throw InvalidRequest("client_id not matching from par: ${request.clientId} vs ${it.clientId}")
+        }
         val response = AuthenticationResponseParameters(
             code = codeService.provideCode().also { code ->
                 codeToClientAuthRequest.put(
@@ -389,16 +396,18 @@ class SimpleAuthorizationService @JvmOverloads constructor(
                     ClientAuthRequest(
                         issuedCode = code,
                         userInfo = userInfo,
-                        scope = scope,
-                        authnDetails = authorizationDetails,
-                        codeChallenge = codeChallenge
+                        scope = request.scope,
+                        authnDetails = request.authorizationDetails,
+                        codeChallenge = request.codeChallenge,
+                        clientId = authorizedClientId,
+                        authenticatedClient = authenticatedClient,
                     )
                 )
             },
-            state = state,
+            state = request.state,
         )
 
-        val url = URLBuilder(redirectUrl)
+        val url = URLBuilder(request.redirectUrl!!)
             .apply { response.encodeToParameters().forEach { this.parameters.append(it.key, it.value) } }
             .buildString()
 
@@ -407,15 +416,25 @@ class SimpleAuthorizationService @JvmOverloads constructor(
 
     internal suspend fun extractRequestForAuthorize(
         input: RequestParameters,
-    ): AuthenticationRequestParameters = when (input) {
-        is AuthenticationRequestParameters -> input
+    ): Pair<AuthenticationRequestParameters, AuthenticatedClient?> = when (input) {
+        is AuthenticationRequestParameters -> {
+            // can't authenticate client with plain auth request in browser
+            input to null
+        }
+
         is JarRequestParameters -> input.requestUri?.let {
-            requestUriToPushedAuthorizationRequest.remove(it)?.apply {
-                if (clientId != input.clientId)
-                    throw InvalidRequest("client_id not matching from par: ${input.clientId} vs $clientId")
-            }
-        } ?: (requestParser.extractRequest(input, null)?.parameters as? AuthenticationRequestParameters)
-        ?: throw InvalidRequest("could not parse request object from request")
+            val storedRequest = requestUriToPushedAuthorizationRequest.remove(it)
+                ?: throw InvalidRequest("request_uri not found: $it")
+            if (storedRequest.request.clientId != input.clientId)
+                throw InvalidRequest("client_id not matching from par: ${input.clientId} vs ${storedRequest.request.clientId}")
+            storedRequest.request to storedRequest.client
+        } ?: run {
+            val request = requestParser.extractRequest(input, null)?.parameters as? AuthenticationRequestParameters
+                ?: throw InvalidRequest("could not parse request object from request")
+            if (input.clientId != request.clientId)
+                throw InvalidRequest("client_id not matching from par: ${input.clientId} vs ${request.clientId}")
+            request to null
+        }
 
         is RequestObjectParameters -> throw InvalidRequest("could not parse request object from request")
         is SignatureRequestParameters -> throw InvalidRequest("could not parse request object from request")
@@ -475,16 +494,34 @@ class SimpleAuthorizationService @JvmOverloads constructor(
         httpRequest: RequestInfo?,
     ): KmmResult<TokenResponseParameters> = catching {
         Napier.i("token called with $request")
-        clientAuthenticationService.authenticateClient(httpRequest, request.clientId).getOrThrow()
+        val authenticatedClient = clientAuthenticationService
+            .authenticateClient(httpRequest, request.clientId).getOrThrow()
+        val presentedClientId = authenticatedClient?.clientId
+            ?: request.clientId
+            ?: throw InvalidGrant("client_id not set")
+
         if (request.grantType == OpenIdConstants.GRANT_TYPE_TOKEN_EXCHANGE) {
             val userInfoEndpoint = metadata().userInfoEndpoint
                 ?: throw InvalidGrant("token_exchange requires userInfoEndpoint")
             return@catching tokenService.tokenExchange(request, userInfoEndpoint, httpRequest)
         }
+        // TODO For dpop combined mode fold into authenticateClient
         val validatedClientKey = tokenService.verification.extractValidatedClientKey(httpRequest).getOrThrow()
 
         val clientAuthRequest = request.loadClientAuthnRequest(httpRequest, validatedClientKey)
             ?: throw InvalidGrant("could not load user info for $request")
+
+        clientAuthRequest.clientId?.let { expectedClientId ->
+            if (presentedClientId != expectedClientId)
+                throw InvalidGrant("code was issued to a different client")
+            if (request.clientId != null && request.clientId != expectedClientId)
+                throw InvalidGrant("client_id does not match authorization code")
+        }
+
+        clientAuthRequest.authenticatedClient?.let { previouslyAuthenticatedClient ->
+            if (previouslyAuthenticatedClient != authenticatedClient)
+                throw InvalidGrant("code was issued to a different client instance")
+        }
 
         request.code?.let { code ->
             clientAuthRequest.codeChallenge?.let {
@@ -531,7 +568,14 @@ class SimpleAuthorizationService @JvmOverloads constructor(
             throw InvalidRequest("neither authorization details nor scope in request")
         }
         token.refreshToken?.let {
-            refreshTokenToAuthRequest.put(it, clientAuthRequest)
+            refreshTokenToAuthRequest.put(
+                key = it,
+                value = clientAuthRequest
+                    .copy(
+                        clientId = clientAuthRequest.clientId ?: presentedClientId,
+                        authenticatedClient = clientAuthRequest.authenticatedClient ?: authenticatedClient
+                    )
+            )
         }
         Napier.i("token returns $token")
         token
@@ -607,7 +651,7 @@ class SimpleAuthorizationService @JvmOverloads constructor(
                 issuedCode = it,
                 userInfo = userInfo,
                 scope = strategy.validScopes(),
-                authnDetails = strategy.validAuthorizationDetails(publicContext)
+                authnDetails = strategy.validAuthorizationDetails(publicContext),
             )
         )
     }
@@ -664,7 +708,6 @@ class SimpleAuthorizationService @JvmOverloads constructor(
         request: TokenIntrospectionRequest,
         httpRequest: RequestInfo?,
     ): KmmResult<TokenIntrospectionResult> = catching {
-        // TODO Which client_id to pass?
         clientAuthenticationService.authenticateClient(httpRequest, null).getOrThrow()
         val response = catchingUnwrapped {
             tokenService.verification.getTokenInfo(request.token)
@@ -705,4 +748,9 @@ class SimpleAuthorizationService @JvmOverloads constructor(
 data class ResponseWithDpopNonce<T>(
     val response: T,
     val dpopNonce: String?,
+)
+
+data class PushedAuthorizationRequest(
+    val request: AuthenticationRequestParameters,
+    val client: AuthenticatedClient?
 )

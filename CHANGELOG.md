@@ -62,6 +62,7 @@ Release 8.0.0 (unreleased):
     - Compare scopes as space-delimited values instead of substrings, when issuing access tokens in `SimpleAuthorizationService` and when authorizing credential requests in `CredentialIssuer`
     - Authorize several credential requests with a single JWT access token
     - Add `TokenService.validateAccessToken()`, which validates the access token and resolves the user info stored at issuance
+    - Bind client authentication to internal state to prevent client mismatches in subsequent requests
 - Deprecations:
     - Remove code deprecated in 7.0.0, e.g. various `Iso180137AnnexC*` and related classes
     - Deprecate all classes used for Presentation Exchange requests and so on, e.g., `CredentialPresentationRequest.PresentationExchangeRequest` or `PresentationExchangeCredentialDisclosure` or `CredentialPresentation.PresentationExchangePresentation`

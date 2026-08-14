@@ -74,6 +74,8 @@ val OAuth2ClientAuthenticationTest by matrixSuite {
                 randomSource = RandomSource.Default
             )
 
+            val otherClientKey = EphemeralKeyWithSelfSignedCert()
+
             object {
                 val scope = scope
                 val client = client
@@ -82,6 +84,8 @@ val OAuth2ClientAuthenticationTest by matrixSuite {
                 val clientAttestation = clientAttestation
                 val clientAttestationPop = clientAttestationPop
                 val signClientAttestationPop = signClientAttestationPop
+                val attesterBackend = attesterBackend
+                val walletProviderCaCert = walletProviderCaCert
 
                 suspend fun signPop(payload: JsonWebToken) = signClientAttestationPop(
                     type = JwsContentTypeConstants.CLIENT_ATTESTATION_POP_JWT,
@@ -105,6 +109,30 @@ val OAuth2ClientAuthenticationTest by matrixSuite {
                     nonce = server.attestationChallenge().getOrThrow().shouldNotBeNull().attestationChallenge,
                     randomSource = RandomSource.Default
                 )
+
+                suspend fun authenticationFor(
+                    client: OAuth2Client,
+                    key: EphemeralKeyWithSelfSignedCert,
+                    authorizationService: SimpleAuthorizationService = server,
+                ) = RequestInfo(
+                    url = "https://example.com/",
+                    method = HttpMethod.Post,
+                    clientAttestation = BuildClientAttestationJwt(
+                        attesterBackend,
+                        clientId = client.clientId,
+                        clientKey = key.jsonWebKey,
+                    ),
+                    clientAttestationPop = BuildClientAttestationPoPJwt(
+                        signJwt = SignJwt(key, JwsHeaderNone()),
+                        audience = AUTHORIZATION_SERVER,
+                        nonce = authorizationService.attestationChallenge().getOrThrow()
+                            .shouldNotBeNull().attestationChallenge,
+                        randomSource = RandomSource.Default,
+                    ),
+                )
+
+                /** A second wallet instance of the same wallet app: same client_id, different instance key. */
+                val otherClientKey = otherClientKey
 
                 @Suppress("DEPRECATION")
                 suspend fun par(
@@ -149,6 +177,59 @@ val OAuth2ClientAuthenticationTest by matrixSuite {
         }
     } - {
 
+        test("reject token request from another wallet instance than the one that pushed the request") {
+            // Both instances use the same client_id, so the client_id cross-check in authorize() passes:
+            // only the key binding established at the PAR endpoint can catch this
+            val state = uuid4().toString()
+            @Suppress("DEPRECATION")
+            val parResponse = it.server.par(
+                it.client.createAuthRequestJar(state = state, scope = it.scope),
+                it.authenticationFor(it.client, it.clientKey)
+            ).getOrThrow().shouldBeInstanceOf<PushedAuthenticationResponseParameters>()
+            val code = it.server
+                .authorize(it.client.createAuthRequestAfterPar(parResponse) as RequestParameters) { catching { user } }
+                .getOrThrow()
+                .shouldBeInstanceOf<AuthenticationResponseResult.Redirect>()
+                .params?.code.shouldNotBeNull()
+
+            @Suppress("DEPRECATION")
+            shouldThrow<OAuth2Exception.InvalidGrant> {
+                it.server.token(
+                    request = it.client.createTokenRequestParameters(
+                        state = state,
+                        authorization = OAuth2Client.AuthorizationForToken.Code(code),
+                        scope = it.scope
+                    ),
+                    httpRequest = it.authenticationFor(it.client, it.otherClientKey)
+                ).getOrThrow()
+            }
+        }
+
+        test("accept token request from the second wallet instance when it pushed the request itself") {
+            // Guards against the test above passing merely because the second instance cannot authenticate
+            val state = uuid4().toString()
+            @Suppress("DEPRECATION")
+            val parResponse = it.server.par(
+                it.client.createAuthRequestJar(state = state, scope = it.scope),
+                it.authenticationFor(it.client, it.otherClientKey)
+            ).getOrThrow().shouldBeInstanceOf<PushedAuthenticationResponseParameters>()
+            val code = it.server
+                .authorize(it.client.createAuthRequestAfterPar(parResponse) as RequestParameters) { catching { user } }
+                .getOrThrow()
+                .shouldBeInstanceOf<AuthenticationResponseResult.Redirect>()
+                .params?.code.shouldNotBeNull()
+
+            @Suppress("DEPRECATION")
+            it.server.token(
+                request = it.client.createTokenRequestParameters(
+                    state = state,
+                    authorization = OAuth2Client.AuthorizationForToken.Code(code),
+                    scope = it.scope
+                ),
+                httpRequest = it.authenticationFor(it.client, it.otherClientKey)
+            ).getOrThrow().accessToken.shouldNotBeNull()
+        }
+
         test("pushed authorization request") {
             it.clientAttestation.payload.issuer.shouldBeNull()
             it.clientAttestation.payload.walletVersion.shouldNotBeNull()
@@ -185,6 +266,64 @@ val OAuth2ClientAuthenticationTest by matrixSuite {
             it.introspect(token)
                 .shouldBeInstanceOf<TokenIntrospectionResponse>()
                 .apply { active shouldBe true }
+        }
+
+        test("direct authorization code is bound to the client id") {
+            val state = uuid4().toString()
+            val authRequest = it.client.createAuthRequestJar(state = state, scope = it.scope)
+            val code = it.server
+                .authorize(authRequest) { catching { user } }
+                .getOrThrow()
+                .shouldBeInstanceOf<AuthenticationResponseResult.Redirect>()
+                .params?.code.shouldNotBeNull()
+            val legitimateRequest = it.client.createTokenRequestParameters(
+                state = state,
+                authorization = OAuth2Client.AuthorizationForToken.Code(code),
+                scope = it.scope,
+            )
+            val attacker = OAuth2Client(clientId = "https://attacker.example/app")
+            val attackerKey = EphemeralKeyWithSelfSignedCert()
+
+            shouldThrow<OAuth2Exception> {
+                it.server.token(
+                    legitimateRequest.copy(clientId = attacker.clientId),
+                    it.authenticationFor(attacker, attackerKey),
+                ).getOrThrow()
+            }
+        }
+
+        test("refresh token is bound when a client first authenticates at the token endpoint") {
+            val server = SimpleAuthorizationService(
+                publicContext = AUTHORIZATION_SERVER,
+                strategy = DummyAuthorizationServiceStrategy(it.scope),
+                tokenService = TokenService.bearer(issueRefreshTokens = true),
+                clientAuthenticationService = AttestationBasedClientAuthenticationService(
+                    issuerIdentifier = AUTHORIZATION_SERVER,
+                    verifyJwsObject = VerifyJwsObjectTrustedCertificate(
+                        trustedIssuers = { setOf(it.walletProviderCaCert) },
+                    ),
+                ),
+            )
+            val preAuthorizedCode = server.providePreAuthorizedCode(user)
+            val refreshToken = server.token(
+                it.client.createTokenRequestParameters(
+                    authorization = OAuth2Client.AuthorizationForToken.PreAuthCode(preAuthorizedCode),
+                    scope = it.scope,
+                ),
+                it.authenticationFor(it.client, it.clientKey, server),
+            ).getOrThrow().refreshToken.shouldNotBeNull()
+            val attacker = OAuth2Client()
+            val attackerKey = EphemeralKeyWithSelfSignedCert()
+
+            shouldThrow<OAuth2Exception> {
+                server.token(
+                    attacker.createTokenRequestParameters(
+                        authorization = OAuth2Client.AuthorizationForToken.RefreshToken(refreshToken),
+                        scope = it.scope,
+                    ),
+                    it.authenticationFor(attacker, attackerKey, server),
+                ).getOrThrow()
+            }
         }
 
         test("client attestation PoP does not contain iss") {

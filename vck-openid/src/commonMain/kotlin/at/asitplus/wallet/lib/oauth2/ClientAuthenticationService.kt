@@ -3,7 +3,9 @@ package at.asitplus.wallet.lib.oauth2
 import at.asitplus.KmmResult
 import at.asitplus.catching
 import at.asitplus.openid.OpenIdConstants
-import at.asitplus.wallet.lib.etsi.Success
+import at.asitplus.signum.indispensable.CryptoPublicKey
+import at.asitplus.signum.indispensable.josef.JsonWebKey
+import at.asitplus.wallet.lib.oidvci.OAuth2Exception
 
 /**
  * Handles authenticating the OAuth 2.0 client for an OAuth 2.0 authorization server,
@@ -23,7 +25,7 @@ interface ClientAuthenticationService {
     suspend fun authenticateClient(
         httpRequest: RequestInfo?,
         clientId: String?,
-    ): KmmResult<Success>
+    ): KmmResult<AuthenticatedClient?>
 }
 
 /** Does not verify the client authentication at all */
@@ -42,7 +44,15 @@ object NoopClientAuthenticationService : ClientAuthenticationService {
     override suspend fun authenticateClient(
         httpRequest: RequestInfo?,
         clientId: String?
-    ): KmmResult<Success> = catching {
-        Success
+    ): KmmResult<AuthenticatedClient?> = catching {
+        null
     }
 }
+
+/** Authenticated OAuth 2.0 client */
+data class AuthenticatedClient(
+    /** `client_id` from the request */
+    val clientId: String,
+    /** The client's public key, if it presented credentials. */
+    val publicKey: CryptoPublicKey?
+)
