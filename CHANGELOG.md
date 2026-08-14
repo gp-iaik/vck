@@ -63,6 +63,7 @@ Release 8.0.0 (unreleased):
     - Authorize several credential requests with a single JWT access token
     - Add `TokenService.validateAccessToken()`, which validates the access token and resolves the user info stored at issuance
     - Bind client authentication to internal state to prevent client mismatches in subsequent requests
+    - Add `dpopKeyMaterial` as explicit constructor argument to `OAuth2KtorClient`
 - Deprecations:
     - Remove code deprecated in 7.0.0, e.g. various `Iso180137AnnexC*` and related classes
     - Deprecate all classes used for Presentation Exchange requests and so on, e.g., `CredentialPresentationRequest.PresentationExchangeRequest` or `PresentationExchangeCredentialDisclosure` or `CredentialPresentation.PresentationExchangePresentation`
@@ -80,6 +81,7 @@ Release 8.0.0 (unreleased):
     - Deprecate constructor in `RequestInfo` taking single values for some HTTP headers, replace with constructor taking in all HTTP headers
     - Deprecate constructor parameter `enforceClientAuthentication` in `AttestationBasedClientAuthenticationService` as the new default is `true`. Callers might use a `NoopClientAuthenticationService`
     - Deprecate `TokenService.readUserInfo()`, since it does not prove possession of the key the access token is bound to. Replace with `TokenService.validateAccessToken()`, which validates the access token including the DPoP proof and returns the user info in `ValidatedAccessToken.userInfoExtended`
+    - Deprecate constructor parameter `signDpop` in `OAuth2KtorClient`, replace by setting `dpopKeyMaterial`
 - Refactorings:
     - In `MdocInputValidator` and `ValidatorMdoc` replace `verifyCoseSignatureWithKey` with a `VerifyCoseSignatureFun<MobileSecurityObject>`, which resolves the issuer key from the COSE headers itself. Consequently `MdocInputValidator.invoke()` and `ValidatorMdoc.verifyIsoCred()` lose their `issuerKey` parameter, `MdocInputValidationSummary.IntegrityValidationSummary.IntegrityValidationResult` loses its `issuerKey` property, and `IntegrityNotValidated` is removed
     - `ValidatorMdoc.verifyDocument()` no longer extracts the issuer certificate itself, but delegates to `MdocInputValidator` like the credential path does

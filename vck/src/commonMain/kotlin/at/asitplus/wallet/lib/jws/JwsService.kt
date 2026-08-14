@@ -76,6 +76,12 @@ fun interface JwsHeaderIdentifierFun {
     suspend operator fun invoke(it: JwsHeader, keyMaterial: KeyMaterial): JwsHeader
 }
 
+/** Identify [KeyMaterial] with it's [KeyMaterial.jsonWebKey] in [JwsHeader.jsonWebKey]. */
+class JwsHeaderJwk : JwsHeaderIdentifierFun {
+    override suspend operator fun invoke(it: JwsHeader, keyMaterial: KeyMaterial) =
+        it.copy(jsonWebKey = keyMaterial.jsonWebKey)
+}
+
 /**
  * Identify [KeyMaterial] with it's [KeyMaterial.getCertificate] in [JwsHeader.certificateChain] if it exists,
  * or [KeyMaterial.jsonWebKey] in [JwsHeader.jsonWebKey]. */

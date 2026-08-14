@@ -25,10 +25,12 @@ import at.asitplus.signum.indispensable.josef.JsonWebToken
 import at.asitplus.signum.indispensable.josef.JwsAlgorithm
 import at.asitplus.signum.indispensable.josef.JwsCompactTyped
 import at.asitplus.signum.indispensable.josef.io.joseCompliantSerializer
+import at.asitplus.signum.indispensable.josef.toJwsAlgorithm
 import at.asitplus.wallet.lib.agent.EphemeralKeyWithoutCert
 import at.asitplus.wallet.lib.agent.KeyMaterial
 import at.asitplus.wallet.lib.agent.RandomSource
 import at.asitplus.wallet.lib.jws.JwsHeaderCertOrJwk
+import at.asitplus.wallet.lib.jws.JwsHeaderJwk
 import at.asitplus.wallet.lib.jws.JwsHeaderNone
 import at.asitplus.wallet.lib.jws.SignJwt
 import at.asitplus.wallet.lib.jws.SignJwtFun
@@ -84,10 +86,12 @@ class OAuth2KtorClient(
     cookiesStorage: CookiesStorage? = null,
     /** Additional configuration for building the HTTP client, e.g. callers may enable logging. */
     httpClientConfig: (HttpClientConfig<*>.() -> Unit)? = null,
-    /** Used to prove possession of the key material for the instance attestation. */
+    /** Used to prove possession of the key material for the instance attestation, see [loadInstanceAttestation]. */
     private val keyMaterial: KeyMaterial = EphemeralKeyWithoutCert(),
-    /** Used to calculate DPoP, i.e. the key the access token and refresh token gets bound to.**/
-    private val signDpop: SignJwtFun<JsonWebToken> = SignJwt(EphemeralKeyWithoutCert(), JwsHeaderCertOrJwk()),
+    /** The key material the access tokens and refresh tokens get bound to, used for calculating DPoP proofs. */
+    private val dpopKeyMaterial: KeyMaterial = EphemeralKeyWithoutCert(),
+    @Deprecated("Set dpopKeyMaterial instead", ReplaceWith("dpopKeyMaterial"))
+    private val signDpop: SignJwtFun<JsonWebToken> = SignJwt(dpopKeyMaterial, JwsHeaderCertOrJwk()),
     /**
      * Implements OAuth2 protocol, `redirectUrl` needs to be registered by the OS for this application, so redirection
      * back from browser works
@@ -331,7 +335,6 @@ class OAuth2KtorClient(
                 applyAuthnForToken(
                     resourceUrl = url,
                     httpMethod = HttpMethod.Post,
-                    useDpop = true,
                     authorizationServer = popAudience,
                     oauthMetadata = oauthMetadata,
                     issuerMetadata = issuerMetadata,
@@ -364,7 +367,6 @@ class OAuth2KtorClient(
      *
      * Clients need to continue the process (after getting back from the browser) with [requestTokenWithAuthCode].
      */
-    @Throws(Exception::class)
     suspend fun startAuthorization(
         oauthMetadata: OAuth2AuthorizationServerMetadata,
         authorizationServer: String,
@@ -373,7 +375,7 @@ class OAuth2KtorClient(
         authorizationDetails: Set<OpenIdAuthorizationDetails>? = null,
         scope: String? = null,
         issuerMetadata: IssuerMetadata? = null
-    ) = catching {
+    ): KmmResult<OpenUrlForAuthnRequest> = catching {
         val authorizationEndpointUrl = oauthMetadata.authorizationEndpoint
             ?: throw Exception("no authorizationEndpoint in $oauthMetadata")
         val requiresPar = oauthMetadata.requirePushedAuthorizationRequests == true
@@ -450,7 +452,6 @@ class OAuth2KtorClient(
                 applyAuthnForToken(
                     resourceUrl = url,
                     httpMethod = HttpMethod.Post,
-                    useDpop = true,
                     authorizationServer = popAudience,
                     oauthMetadata = oauthMetadata,
                     issuerMetadata = issuerMetadata,
@@ -493,7 +494,6 @@ class OAuth2KtorClient(
                 applyAuthnForToken(
                     resourceUrl = url,
                     httpMethod = HttpMethod.Post,
-                    useDpop = true,
                     authorizationServer = popAudience,
                     oauthMetadata = oauthMetadata,
                     issuerMetadata = issuerMetadata,
@@ -542,16 +542,16 @@ class OAuth2KtorClient(
         httpMethod: HttpMethod,
         dpopNonce: String? = null,
     ): HttpRequestBuilder.() -> Unit {
-        val dpopHeader = if (tokenResponse.tokenType.equals(TOKEN_TYPE_DPOP, true))
+        val dpopHeader = if (tokenResponse.tokenType.equals(TOKEN_TYPE_DPOP, true)) {
             BuildDPoPHeader(
-                signDpop = signDpop,
+                signDpop = SignJwt(dpopKeyMaterial, JwsHeaderJwk()),
                 url = resourceUrl,
                 httpMethod = httpMethod.value,
                 accessToken = tokenResponse.accessToken,
                 nonce = dpopNonce ?: currentDpopNonce(resourceUrl),
                 randomSource = randomSource
             )
-        else null
+        } else null
         return {
             headers {
                 append(HttpHeaders.Authorization, tokenResponse.toHttpHeaderValue())
@@ -561,14 +561,14 @@ class OAuth2KtorClient(
     }
 
     /**
-     * Sets the appropriate headers when accessing a token endpoint:
+     * Sets the appropriate headers when accessing a token endpoint (or equivalent, like PAR):
      * - loads client attestation when [loadInstanceAttestation] is set
-     * - sends a DPoP proof when [useDpop] is set
+     * - sends a client attestation PoP for that
+     * - sends a DPoP proof when authorization server advertises support for it
      */
     internal suspend fun applyAuthnForToken(
         resourceUrl: String,
         httpMethod: HttpMethod,
-        useDpop: Boolean,
         authorizationServer: String,
         oauthMetadata: OAuth2AuthorizationServerMetadata,
         issuerMetadata: IssuerMetadata? = null,
@@ -603,15 +603,15 @@ class OAuth2KtorClient(
             wia.jws to pop.jws
         } else null to null
 
-        val dpopHeader = useDpop.takeIf { it }?.let {
+        val dpopHeader = if (oauthMetadata.supportsDPoP()) {
             BuildDPoPHeader(
-                signDpop = signDpop,
+                signDpop = SignJwt(dpopKeyMaterial, JwsHeaderJwk()),
                 url = resourceUrl,
                 httpMethod = httpMethod.value,
                 nonce = currentDpopNonce(resourceUrl),
                 randomSource = randomSource,
             )
-        }
+        } else null
 
         return {
             headers {
@@ -621,6 +621,7 @@ class OAuth2KtorClient(
             }
         }
     }
+
 
     /** Not cached: the challenge is used for the request being built right now, and is single-use. */
     private suspend fun fetchAttestationChallenge(
@@ -632,7 +633,14 @@ class OAuth2KtorClient(
     }
 
     private fun OAuth2AuthorizationServerMetadata.supportsClientAuth(): Boolean =
-        tokenEndPointAuthMethodsSupported?.contains(AUTH_METHOD_ATTEST_JWT_CLIENT_AUTH) == true
+        tokenEndPointAuthMethodsSupported?.contains(
+            AUTH_METHOD_ATTEST_JWT_CLIENT_AUTH
+        ) == true
+
+    private fun OAuth2AuthorizationServerMetadata.supportsDPoP(): Boolean =
+        dpopSigningAlgValuesSupported?.contains(
+            dpopKeyMaterial.signatureAlgorithm.toJwsAlgorithm().getOrThrow()
+        ) == true
 }
 
 data class TokenResponseWithDpopNonce(

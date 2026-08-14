@@ -283,9 +283,3 @@ class JwsHeaderJwksUrl(val jsonWebKeySetUrl: String) : JwsHeaderIdentifierFun {
         keyMaterial: KeyMaterial,
     ) = it.copy(keyId = keyMaterial.identifier, jsonWebKeySetUrl = jsonWebKeySetUrl)
 }
-
-/** Identify [KeyMaterial] with it's [KeyMaterial.jsonWebKey] in [JwsHeader.jsonWebKey]. */
-class JwsHeaderJwk : JwsHeaderIdentifierFun {
-    override suspend operator fun invoke(it: JwsHeader, keyMaterial: KeyMaterial) =
-        it.copy(jsonWebKey = keyMaterial.jsonWebKey)
-}

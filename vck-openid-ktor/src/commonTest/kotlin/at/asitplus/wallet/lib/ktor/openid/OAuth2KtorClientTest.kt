@@ -304,7 +304,6 @@ val OAuth2KtorClientTest by matrixSuite {
                 client.applyAuthnForToken(
                     resourceUrl = "https://example.com/token",
                     httpMethod = HttpMethod.Post,
-                    useDpop = false,
                     authorizationServer = authorizationService.publicContext,
                     oauthMetadata = authorizationService.metadata(),
                 )
