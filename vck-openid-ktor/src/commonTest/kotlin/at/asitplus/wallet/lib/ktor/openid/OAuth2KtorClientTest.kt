@@ -2,6 +2,8 @@ package at.asitplus.wallet.lib.ktor.openid
 
 import at.asitplus.catching
 import at.asitplus.openid.AttestationChallengeResponse
+import at.asitplus.openid.OpenIdConstants.AUTH_METHOD_ATTEST_JWT_CLIENT_AUTH
+import at.asitplus.openid.OpenIdConstants.ClientAttestationPopMethod
 import at.asitplus.openid.PushedAuthenticationResponseParameters
 import at.asitplus.openid.RequestParameters
 import at.asitplus.openid.TokenIntrospectionRequest
@@ -9,6 +11,7 @@ import at.asitplus.openid.TokenRequestParameters
 import at.asitplus.signum.indispensable.josef.JwsAlgorithm
 import at.asitplus.signum.indispensable.josef.io.joseCompliantSerializer
 import at.asitplus.testballoon.matrix.matrixSuite
+import at.asitplus.wallet.lib.DefaultNonceService
 import at.asitplus.wallet.lib.agent.EphemeralKeyWithSelfSignedCert
 import at.asitplus.wallet.lib.agent.EphemeralKeyWithoutCert
 import at.asitplus.wallet.lib.agent.IssuerAgent
@@ -23,9 +26,14 @@ import at.asitplus.wallet.lib.ktor.openid.TestUtils.respond
 import at.asitplus.wallet.lib.ktor.openid.TestUtils.respondIncludingDpopNonce
 import at.asitplus.wallet.lib.ktor.openid.TestUtils.respondOAuth2Error
 import at.asitplus.wallet.lib.oauth2.AttestationBasedClientAuthenticationService
+import at.asitplus.wallet.lib.oauth2.DPoP
 import at.asitplus.wallet.lib.oauth2.DPoPNonce
+import at.asitplus.wallet.lib.oauth2.NoopClientAuthenticationService
 import at.asitplus.wallet.lib.oauth2.OAuth2Client
+import at.asitplus.wallet.lib.oauth2.OAuthClientAttestation
 import at.asitplus.wallet.lib.oauth2.OAuthClientAttestationChallenge
+import at.asitplus.wallet.lib.oauth2.OAuthClientAttestationPop
+import at.asitplus.wallet.lib.oauth2.RequestInfo
 import at.asitplus.wallet.lib.oauth2.SimpleAuthorizationService
 import at.asitplus.wallet.lib.oauth2.TokenService
 import at.asitplus.wallet.lib.oidvci.BuildClientAttestationJwt
@@ -36,8 +44,11 @@ import at.asitplus.wallet.lib.oidvci.decodeFromPostBody
 import at.asitplus.wallet.lib.oidvci.decodeFromUrlQuery
 import io.github.aakira.napier.Napier
 import io.kotest.assertions.throwables.shouldThrow
+import io.kotest.matchers.collections.shouldBeEmpty
+import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldContain
 import io.ktor.client.*
 import io.ktor.client.engine.mock.*
@@ -65,6 +76,10 @@ val OAuth2KtorClientTest by matrixSuite {
         serveChallengeEndpoint: Boolean = true,
         requireChallengeRetry: Boolean = false,
         provideChallengeOnParSuccess: Boolean = false,
+        popMethods: Set<ClientAttestationPopMethod>? = setOf(ClientAttestationPopMethod.AttestationPopJwt),
+        dpopAlgorithms: Set<JwsAlgorithm.Signature> = setOf(JwsAlgorithm.Signature.ES256),
+        /** DPoP combined mode has a single key: the attested key is also the DPoP key. */
+        useSingleKey: Boolean = false,
     ): Context {
         val clientAuthKeyMaterial = EphemeralKeyWithoutCert()
         val authorizationEndpointPath = "/authorize"
@@ -73,15 +88,25 @@ val OAuth2KtorClientTest by matrixSuite {
         val parEndpointPath = "/par"
         val challengeEndpointPath = "/challenge"
         val publicContext = "https://issuer.example.com"
+        // In DPoP combined mode the attestation challenge is carried in the DPoP proof's nonce, so both stores
+        // must be the same instance for a challenge to be accepted as a DPoP nonce
+        val proofNonceService = DefaultNonceService()
         val authorizationService = SimpleAuthorizationService(
             strategy = strategy,
             publicContext = publicContext,
             authorizationEndpointPath = authorizationEndpointPath,
             tokenEndpointPath = tokenEndpointPath,
             pushedAuthorizationRequestEndpointPath = parEndpointPath,
-            clientAuthenticationService = AttestationBasedClientAuthenticationService(),
+            clientAuthenticationService = popMethods?.let {
+                AttestationBasedClientAuthenticationService(
+                    acceptedPopMethods = it,
+                    nonceService = proofNonceService,
+                )
+            } ?: NoopClientAuthenticationService,
             tokenService = TokenService.jwt(
-                issueRefreshTokens = true
+                issueRefreshTokens = true,
+                dpopNonceService = proofNonceService,
+                verificationAlgorithms = dpopAlgorithms,
             ),
             requestObjectSigningAlgorithms = requestObjectSigningAlgorithms,
             requirePushedAuthorizationRequests = requirePAR,
@@ -209,6 +234,7 @@ val OAuth2KtorClientTest by matrixSuite {
                     }
                 },
                 keyMaterial = clientAuthKeyMaterial,
+                dpopKeyMaterial = if (useSingleKey) clientAuthKeyMaterial else EphemeralKeyWithoutCert(),
                 oAuth2Client = OAuth2Client(clientId = clientId),
                 randomSource = RandomSource.Default,
             ),
@@ -316,6 +342,60 @@ val OAuth2KtorClientTest by matrixSuite {
         }
     }
 
+    /**
+     * draft-10 8 puts the client authentication method in `token_endpoint_auth_methods_supported`, while
+     * `client_attestation_pop_methods_supported` (7.6) is about presenting an attestation as an *additional*
+     * security signal and MAY be omitted, so the mode must be selected from the former.
+     */
+    test("sends a dedicated PoP when the AS advertises the auth method but no PoP methods") {
+        with(setup(strategy, setOf(JwsAlgorithm.Signature.ES256), requirePAR = false)) {
+            val metadata = authorizationService.metadata().copy(
+                tokenEndPointAuthMethodsSupported = setOf(AUTH_METHOD_ATTEST_JWT_CLIENT_AUTH),
+                clientAttestationPopMethodsSupported = null,
+            )
+
+            val headers = HttpRequestBuilder().apply {
+                client.applyAuthnForToken(
+                    resourceUrl = "https://issuer.example.com/token",
+                    httpMethod = HttpMethod.Post,
+                    authorizationServer = authorizationService.publicContext,
+                    oauthMetadata = metadata,
+                )()
+            }.headers.build()
+
+            headers[HttpHeaders.OAuthClientAttestation].shouldNotBeNull()
+            headers[HttpHeaders.OAuthClientAttestationPop].shouldNotBeNull()
+        }
+    }
+
+    test("combined mode metadata does not break a client that sends no attestation") {
+        with(
+            setup(
+                strategy, setOf(JwsAlgorithm.Signature.ES256), requirePAR = false,
+                popMethods = setOf(ClientAttestationPopMethod.DpopCombined),
+            )
+        ) {
+            // No loadInstanceAttestation, and the two keys are independent because none of them is attested
+            val plainDpopClient = OAuth2KtorClient(
+                engine = mockEngine,
+                oAuth2Client = OAuth2Client(clientId = "https://example.com/rp-no-attestation"),
+                randomSource = RandomSource.Default,
+            )
+
+            val headers = HttpRequestBuilder().apply {
+                plainDpopClient.applyAuthnForToken(
+                    resourceUrl = "https://issuer.example.com/token",
+                    httpMethod = HttpMethod.Post,
+                    authorizationServer = authorizationService.publicContext,
+                    oauthMetadata = authorizationService.metadata(),
+                )()
+            }.headers.build()
+
+            headers[HttpHeaders.OAuthClientAttestation].shouldBeNull()
+            headers[HttpHeaders.DPoP].shouldNotBeNull()
+        }
+    }
+
     test("instance attestation callbacks receive authorization server context") {
         var attestationInput: OAuth2KtorClient.LoadInstanceAttestationInput? = null
 
@@ -417,6 +497,235 @@ val OAuth2KtorClientTest by matrixSuite {
             ).getOrThrow()
 
             receivedPopChallenges shouldBe listOf(null, issuedAttestationChallenges.single())
+        }
+    }
+
+    /**
+     * DPoP combined mode, i.e. one DPoP proof also serving as the Client Attestation PoP, from sections 5.2 and 7.3
+     * of [OAuth 2.0 Attestation-Based Client Authentication](https://www.ietf.org/archive/id/draft-ietf-oauth-attestation-based-client-auth-10.html)
+     */
+    val combinedMode = setOf(ClientAttestationPopMethod.DpopCombined)
+
+    test("combined mode sends attestation and DPoP proof, but no dedicated PoP") {
+        with(
+            setup(
+                strategy = strategy,
+                requestObjectSigningAlgorithms = setOf(JwsAlgorithm.Signature.ES256),
+                requirePAR = true,
+                popMethods = combinedMode,
+                useSingleKey = true,
+            )
+        ) {
+            val metadata = authorizationService.metadata()
+            val resourceUrl = metadata.pushedAuthorizationRequestEndpoint.shouldNotBeNull()
+            val builder = HttpRequestBuilder().apply(
+                client.applyAuthnForToken(
+                    resourceUrl = resourceUrl,
+                    httpMethod = HttpMethod.Post,
+                    authorizationServer = authorizationService.publicContext,
+                    oauthMetadata = metadata,
+                )
+            )
+            val request = RequestInfo(resourceUrl, HttpMethod.Post, builder.headers.build())
+
+            request.clientAttestation.shouldNotBeNull()
+            request.dpop.shouldNotBeNull()
+            // 5.2: the DPoP proof replaces the dedicated PoP, it does not accompany it
+            request.clientAttestationPop.shouldBeNull()
+        }
+    }
+
+    test("combined mode signs the DPoP proof with the attested key") {
+        with(
+            setup(
+                strategy = strategy,
+                requestObjectSigningAlgorithms = setOf(JwsAlgorithm.Signature.ES256),
+                requirePAR = true,
+                popMethods = combinedMode,
+                useSingleKey = true,
+            )
+        ) {
+            val metadata = authorizationService.metadata()
+            val resourceUrl = metadata.pushedAuthorizationRequestEndpoint.shouldNotBeNull()
+            val builder = HttpRequestBuilder().apply(
+                client.applyAuthnForToken(
+                    resourceUrl = resourceUrl,
+                    httpMethod = HttpMethod.Post,
+                    authorizationServer = authorizationService.publicContext,
+                    oauthMetadata = metadata,
+                )
+            )
+            val request = RequestInfo(resourceUrl, HttpMethod.Post, builder.headers.build())
+            val attestedKey = request.clientAttestation.shouldNotBeNull()
+                .payload.confirmationClaim.shouldNotBeNull()
+                .jsonWebKey.shouldNotBeNull()
+            val dpopKey = request.dpop.shouldNotBeNull().jws.jwsHeader.jsonWebKey.shouldNotBeNull()
+
+            // Without this the DPoP proof says nothing about possession of the attested key
+            dpopKey.jwkThumbprint shouldBe attestedKey.jwkThumbprint
+        }
+    }
+
+    test("combined mode carries the attestation challenge as the DPoP nonce") {
+        with(
+            setup(
+                strategy = strategy,
+                requestObjectSigningAlgorithms = setOf(JwsAlgorithm.Signature.ES256),
+                requirePAR = true,
+                popMethods = combinedMode,
+                useSingleKey = true,
+            )
+        ) {
+            val metadata = authorizationService.metadata()
+            val resourceUrl = metadata.pushedAuthorizationRequestEndpoint.shouldNotBeNull()
+            val builder = HttpRequestBuilder().apply(
+                client.applyAuthnForToken(
+                    resourceUrl = resourceUrl,
+                    httpMethod = HttpMethod.Post,
+                    authorizationServer = authorizationService.publicContext,
+                    oauthMetadata = metadata,
+                )
+            )
+            val request = RequestInfo(resourceUrl, HttpMethod.Post, builder.headers.build())
+
+            request.dpop.shouldNotBeNull().payload.nonce shouldBe issuedAttestationChallenges.single()
+        }
+    }
+
+    test("combined mode completes the authorization code flow") {
+        with(
+            setup(
+                strategy = strategy,
+                requestObjectSigningAlgorithms = setOf(JwsAlgorithm.Signature.ES256),
+                requirePAR = true,
+                popMethods = combinedMode,
+                useSingleKey = true,
+            )
+        ) {
+            val authorization = client.startAuthorization(
+                oauthMetadata = authorizationService.metadata(),
+                authorizationServer = authorizationService.publicContext,
+                scope = requestedScope,
+            ).getOrThrow()
+            val httpClient = HttpClient(mockEngine) { followRedirects = false }
+            val redirect = httpClient.get(authorization.url).headers[HttpHeaders.Location].shouldNotBeNull()
+
+            client.requestTokenWithAuthCode(
+                oauthMetadata = authorizationService.metadata(),
+                url = redirect,
+                authorizationServer = authorizationService.publicContext,
+                state = authorization.state,
+                scope = requestedScope,
+                authorizationDetails = setOf(),
+            ).getOrThrow().params.accessToken.shouldNotBeNull()
+        }
+    }
+
+    test("combined mode fails before sending when the attested key is not the DPoP key") {
+        with(
+            setup(
+                strategy = strategy,
+                requestObjectSigningAlgorithms = setOf(JwsAlgorithm.Signature.ES256),
+                requirePAR = true,
+                popMethods = combinedMode,
+                useSingleKey = false, // independent DPoP key cannot prove possession of the attested key
+            )
+        ) {
+            shouldThrow<IllegalArgumentException> {
+                client.startAuthorization(
+                    oauthMetadata = authorizationService.metadata(),
+                    authorizationServer = authorizationService.publicContext,
+                    scope = requestedScope,
+                ).getOrThrow()
+            }
+
+            // A request that cannot possibly authenticate must not be sent at all
+            mockEngine.requestHistory.filter { it.url.fullPath.startsWith("/par") }.shouldBeEmpty()
+        }
+    }
+
+    test("combined mode fails before sending when the AS advertises no usable DPoP algorithm") {
+        with(
+            setup(
+                strategy = strategy,
+                requestObjectSigningAlgorithms = setOf(JwsAlgorithm.Signature.ES256),
+                requirePAR = true,
+                popMethods = combinedMode,
+                dpopAlgorithms = setOf(JwsAlgorithm.Signature.ES512), // client keys are ES256
+                useSingleKey = true,
+            )
+        ) {
+            shouldThrow<IllegalArgumentException> {
+                client.startAuthorization(
+                    oauthMetadata = authorizationService.metadata(),
+                    authorizationServer = authorizationService.publicContext,
+                    scope = requestedScope,
+                ).getOrThrow()
+            }
+
+            // Combined mode without a DPoP proof is not a mode, so degrading silently must not happen
+            mockEngine.requestHistory.filter { it.url.fullPath.startsWith("/par") }.shouldBeEmpty()
+        }
+    }
+
+    test("normal mode is preferred when the AS advertises both auth methods") {
+        with(
+            setup(
+                strategy = strategy,
+                requestObjectSigningAlgorithms = setOf(JwsAlgorithm.Signature.ES256),
+                requirePAR = true,
+                popMethods = setOf(
+                    ClientAttestationPopMethod.AttestationPopJwt,
+                    ClientAttestationPopMethod.DpopCombined,
+                ),
+                useSingleKey = false,
+            )
+        ) {
+            val metadata = authorizationService.metadata()
+            val resourceUrl = metadata.pushedAuthorizationRequestEndpoint.shouldNotBeNull()
+            val builder = HttpRequestBuilder().apply(
+                client.applyAuthnForToken(
+                    resourceUrl = resourceUrl,
+                    httpMethod = HttpMethod.Post,
+                    authorizationServer = authorizationService.publicContext,
+                    oauthMetadata = metadata,
+                )
+            )
+            val request = RequestInfo(resourceUrl, HttpMethod.Post, builder.headers.build())
+            val attestedKey = request.clientAttestation.shouldNotBeNull()
+                .payload.confirmationClaim.shouldNotBeNull()
+                .jsonWebKey.shouldNotBeNull()
+            val dpop = request.dpop.shouldNotBeNull()
+
+            request.clientAttestationPop.shouldNotBeNull()
+            dpop.payload.nonce.shouldBeNull()
+            dpop.jws.jwsHeader.jsonWebKey.shouldNotBeNull().jwkThumbprint shouldNotBe attestedKey.jwkThumbprint
+        }
+    }
+
+    test("no attestation headers when the AS advertises no attestation auth method") {
+        with(
+            setup(
+                strategy = strategy,
+                requestObjectSigningAlgorithms = setOf(JwsAlgorithm.Signature.ES256),
+                requirePAR = false,
+                popMethods = null,
+            )
+        ) {
+            val metadata = authorizationService.metadata()
+            val resourceUrl = metadata.tokenEndpoint.shouldNotBeNull()
+            val builder = HttpRequestBuilder().apply(
+                client.applyAuthnForToken(
+                    resourceUrl = resourceUrl,
+                    httpMethod = HttpMethod.Post,
+                    authorizationServer = authorizationService.publicContext,
+                    oauthMetadata = metadata,
+                )
+            )
+            val request = RequestInfo(resourceUrl, HttpMethod.Post, builder.headers.build())
+
+            request.clientAttestation.shouldBeNull()
+            request.clientAttestationPop.shouldBeNull()
         }
     }
 

@@ -12,6 +12,9 @@ import at.asitplus.openid.OAuth2AuthorizationServerMetadata
 import at.asitplus.openid.OpenIdAuthorizationDetails
 import at.asitplus.openid.OpenIdConstants
 import at.asitplus.openid.OpenIdConstants.AUTH_METHOD_ATTEST_JWT_CLIENT_AUTH
+import at.asitplus.openid.OpenIdConstants.AUTH_METHOD_ATTEST_JWT_CLIENT_AUTH_DPOP
+import at.asitplus.openid.OpenIdConstants.ClientAttestationPopMethod.AttestationPopJwt
+import at.asitplus.openid.OpenIdConstants.ClientAttestationPopMethod.DpopCombined
 import at.asitplus.openid.OpenIdConstants.TOKEN_TYPE_DPOP
 import at.asitplus.openid.PushedAuthenticationResponseParameters
 import at.asitplus.openid.RequestParameters
@@ -153,7 +156,6 @@ class OAuth2KtorClient(
      * Stores the latest DPoP nonce per origin. RFC 9449 requires using only the most recent nonce
      * issued by the server that provided it.
      */
-    // TODO Evaluate DPoP combined mode
     private val dpopNonceByOriginRef = AtomicReference(mapOf<String, String>())
 
     private fun String.origin(): String = Url(this).let { parsed ->
@@ -568,7 +570,7 @@ class OAuth2KtorClient(
      * Sets the appropriate headers when accessing a token endpoint (or equivalent, like PAR):
      * - loads client attestation when [loadInstanceAttestation] is set
      * - sends a client attestation PoP for that
-     * - sends a DPoP proof when authorization server advertises support for it
+     * - sends a DPoP proof when the authorization server advertises support for it
      */
     internal suspend fun applyAuthnForToken(
         resourceUrl: String,
@@ -577,50 +579,70 @@ class OAuth2KtorClient(
         oauthMetadata: OAuth2AuthorizationServerMetadata,
         issuerMetadata: IssuerMetadata? = null,
     ): HttpRequestBuilder.() -> Unit {
-        val (clientAttJwt, clientAttPop) = if (loadInstanceAttestation != null && oauthMetadata.supportsClientAuth()) {
-            val wia = loadInstanceAttestation(
+        val supportsClientAuth = oauthMetadata.supportsClientAuth()
+        val clientAuthMethods = oauthMetadata.tokenEndPointAuthMethodsSupported.orEmpty()
+            .mapNotNull { OpenIdConstants.ClientAttestationPopMethod.matchByClientAuthMethod(it) }
+        val normalMode = clientAuthMethods.contains(AttestationPopJwt)
+        val combinedMode = !normalMode && clientAuthMethods.contains(DpopCombined)
+
+        val clientAttJwt = if (loadInstanceAttestation != null && supportsClientAuth) {
+            if (combinedMode) {
+                require(oauthMetadata.supportsDPoP()) {
+                    "Authorization server does not support DPoP, but client attestation PoP is combined"
+                }
+                require(keyMaterial.publicKey == dpopKeyMaterial.publicKey) {
+                    "Key material for DPoP and client attestation PoP are not the same"
+                }
+            }
+            loadInstanceAttestation(
                 LoadInstanceAttestationInput(
                     authorizationServer = authorizationServer,
                     credentialIssuer = issuerMetadata?.credentialIssuer ?: authorizationServer,
                     preferredClientStatusPeriod = issuerMetadata?.preferredClientStatusPeriod,
                 )
-            ).getOrThrow()
-
-            val cnfKey = wia.payload.confirmationClaim?.jsonWebKey
-            require(cnfKey != null) { "Instance attestation has no cnf.jwk — PoP key cannot be verified" }
-            require(cnfKey.jwkThumbprint == keyMaterial.jsonWebKey.jwkThumbprint) {
-                "keyMaterial does not match the cnf key in the instance attestation. " +
-                        "The PoP JWT will not verify on the server. " +
-                        "Expected cnf thumbprint: ${cnfKey.jwkThumbprint}, " +
-                        "got keyMaterial thumbprint: ${keyMaterial.jsonWebKey.jwkThumbprint}"
+            ).getOrThrow().apply {
+                payload.confirmationClaim?.jsonWebKey.let { cnfKey ->
+                    val cryptoPublicKey = cnfKey?.toCryptoPublicKey()?.getOrNull()
+                    require(cryptoPublicKey != null) {
+                        "Instance attestation has no cnf.jwk — PoP key cannot be verified"
+                    }
+                    require(cryptoPublicKey == keyMaterial.publicKey) {
+                        "keyMaterial does not match the cnf key in the instance attestation"
+                    }
+                }
             }
+        } else null
 
-            val pop = catching {
-                BuildClientAttestationPoPJwt(
-                    signJwt = SignJwt(keyMaterial, JwsHeaderNone()),
-                    audience = authorizationServer,
-                    // nonce support must not be implemented by the AS, so we keep it optional
-                    nonce = takeAttestationChallenge(resourceUrl)
-                        ?: fetchAttestationChallenge(oauthMetadata),
-                )
-            }.getOrThrow()
-            wia.jws to pop.jws
-        } else null to null
+        val clientAttPop = if (clientAttJwt != null && normalMode) {
+            BuildClientAttestationPoPJwt(
+                signJwt = SignJwt(keyMaterial, JwsHeaderNone()),
+                audience = authorizationServer,
+                // nonce support must not be implemented by the AS, so we keep it optional
+                nonce = takeAttestationChallenge(resourceUrl)
+                    ?: fetchAttestationChallenge(oauthMetadata),
+            )
+        } else null
 
         val dpopHeader = if (oauthMetadata.supportsDPoP()) {
             BuildDPoPHeader(
                 signDpop = SignJwt(dpopKeyMaterial, JwsHeaderJwk()),
                 url = resourceUrl,
                 httpMethod = httpMethod.value,
-                nonce = currentDpopNonce(resourceUrl),
+                nonce = if (combinedMode) {
+                    takeAttestationChallenge(resourceUrl)
+                        ?: currentDpopNonce(resourceUrl)
+                        ?: fetchAttestationChallenge(oauthMetadata)
+                } else {
+                    currentDpopNonce(resourceUrl)
+                },
                 randomSource = randomSource,
             )
         } else null
 
         return {
             headers {
-                clientAttJwt?.let { append(HttpHeaders.OAuthClientAttestation, it.toString()) }
-                clientAttPop?.let { append(HttpHeaders.OAuthClientAttestationPop, it.toString()) }
+                clientAttJwt?.let { append(HttpHeaders.OAuthClientAttestation, it.jws.toString()) }
+                clientAttPop?.let { append(HttpHeaders.OAuthClientAttestationPop, it.jws.toString()) }
                 dpopHeader?.let { append(HttpHeaders.DPoP, it.toString()) }
             }
         }
@@ -637,9 +659,8 @@ class OAuth2KtorClient(
     }
 
     private fun OAuth2AuthorizationServerMetadata.supportsClientAuth(): Boolean =
-        tokenEndPointAuthMethodsSupported?.contains(
-            AUTH_METHOD_ATTEST_JWT_CLIENT_AUTH
-        ) == true
+        tokenEndPointAuthMethodsSupported.orEmpty()
+            .any { it == AUTH_METHOD_ATTEST_JWT_CLIENT_AUTH || it == AUTH_METHOD_ATTEST_JWT_CLIENT_AUTH_DPOP }
 
     private fun OAuth2AuthorizationServerMetadata.supportsDPoP(): Boolean =
         dpopSigningAlgValuesSupported?.contains(

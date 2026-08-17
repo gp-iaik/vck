@@ -407,30 +407,32 @@ object OpenIdConstants {
      */
     @Serializable(with = ClientAttestationPopMethod.Serializer::class)
     sealed class ClientAttestationPopMethod(
-        val stringRepresentation: String
+        val stringRepresentation: String,
+        val clientAuthMethod: String?,
     ) {
         /**
          * The Proof of Possession is a dedicated Client Attestation PoP JWT as defined in
          * Section 5.1 ("normal mode").
          */
-        object AttestationPopJwt : ClientAttestationPopMethod(STRING_ATTESTATION_POP_JWT)
+        object AttestationPopJwt :
+            ClientAttestationPopMethod(STRING_ATTESTATION_POP_JWT, AUTH_METHOD_ATTEST_JWT_CLIENT_AUTH)
 
         /**
          * The Proof of Possession is a DPoP proof serving as the combined Proof of Possession as defined in
          * Section 5.2 ("DPoP combined mode").
          */
-        object DpopCombined : ClientAttestationPopMethod(STRING_DPOP_COMBINED)
+        object DpopCombined : ClientAttestationPopMethod(STRING_DPOP_COMBINED, AUTH_METHOD_ATTEST_JWT_CLIENT_AUTH_DPOP)
 
         /**
          * No Client Attestation is required. A server includes this value to signal that the Client MAY omit the
          * Client Attestation.
          */
-        object None : ClientAttestationPopMethod(STRING_NONE)
+        object None : ClientAttestationPopMethod(STRING_NONE, null)
 
         /**
          * Any not natively supported PoP method, so it can still be parsed
          */
-        class Other(stringRepresentation: String) : ClientAttestationPopMethod(stringRepresentation)
+        class Other(stringRepresentation: String) : ClientAttestationPopMethod(stringRepresentation, null)
 
         companion object {
             private const val STRING_ATTESTATION_POP_JWT = "attestation_pop_jwt"
@@ -444,6 +446,13 @@ object OpenIdConstants {
                     None
                 )
             }
+
+            /**
+             * Matches by client auth method from e.g.
+             * [OAuth2AuthorizationServerMetadata.tokenEndPointAuthMethodsSupported]
+             */
+            fun matchByClientAuthMethod(clientAuthMethod: String) =
+                entries.firstOrNull { it.clientAuthMethod == clientAuthMethod }
         }
 
         object Serializer : KSerializer<ClientAttestationPopMethod> {

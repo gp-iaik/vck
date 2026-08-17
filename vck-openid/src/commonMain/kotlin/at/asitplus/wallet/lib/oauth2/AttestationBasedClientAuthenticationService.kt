@@ -74,13 +74,7 @@ class AttestationBasedClientAuthenticationService @JvmOverloads constructor(
     }
 
     override val supportedAuthMethods: Set<String>
-        get() = acceptedPopMethods.mapNotNull {
-            when (it) {
-                AttestationPopJwt -> OpenIdConstants.AUTH_METHOD_ATTEST_JWT_CLIENT_AUTH
-                DpopCombined -> OpenIdConstants.AUTH_METHOD_ATTEST_JWT_CLIENT_AUTH_DPOP
-                else -> null
-            }
-        }.toSet()
+        get() = acceptedPopMethods.mapNotNull { it.clientAuthMethod }.toSet()
 
     override val supportedPopSigningAlgs: Set<String>
         get() = supportedSigningAlgorithms.map { it.identifier }.toSet()
