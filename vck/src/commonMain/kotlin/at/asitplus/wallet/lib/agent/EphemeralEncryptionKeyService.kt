@@ -23,6 +23,10 @@ import kotlin.coroutines.cancellation.CancellationException
  * by passing the same sort of [MapStore] implementation they use for the other stores of e.g. `OpenId4VpVerifier`.
  * Note that keys of abandoned flows are never consumed, so entries
  * need to be evicted eventually, which [DefaultMapStore] does after its `lifetime`.
+ * Attackers might extract the `kid` from a request sent to the other party,
+ * and trick us into decrypting a forged response with that `kid` in the header,
+ * leading us into consuming the key, and burning that session for the righteous party.
+ * We've decided to take this risk, as keys are, per definition, short-lived and used for one request/response only.
  */
 class EphemeralEncryptionKeyService(
     private val identifierToPrivateKeyPem: MapStore<String, String> = DefaultMapStore(),
@@ -48,17 +52,20 @@ class EphemeralEncryptionKeyService(
      */
     @Throws(IllegalArgumentException::class, CancellationException::class)
     suspend fun consumeKey(identifier: String): KeyMaterial? =
-        identifierToPrivateKeyPem.remove(identifier)?.let { pem ->
-            val privateKey = CryptoPrivateKey.decodeFromPem(pem).getOrThrow()
-            require(privateKey is CryptoPrivateKey.EC.WithPublicKey) { "Not an EC private key: $identifier" }
-            EphemeralEncryptionKey(
-                signer = SignatureAlgorithm.ECDSAwithSHA256.signerFor(privateKey).getOrThrow(),
-                identifier = identifier,
-            )
-        }
+        identifierToPrivateKeyPem.remove(identifier)?.toKeyMaterial(identifier)
+
+    private fun String.toKeyMaterial(identifier: String): KeyMaterial {
+        val privateKey = CryptoPrivateKey.decodeFromPem(this).getOrThrow()
+        require(privateKey is CryptoPrivateKey.EC.WithPublicKey) { "Not an EC private key: $identifier" }
+        return EphemeralEncryptionKey(
+            signer = SignatureAlgorithm.ECDSAwithSHA256.signerFor(privateKey).getOrThrow(),
+            identifier = identifier,
+        )
+    }
 }
 
 /** Key material recovered from [EphemeralEncryptionKeyService], used for key agreement only. */
 private class EphemeralEncryptionKey(signer: Signer, identifier: String) : SignerBasedKeyMaterial(signer, identifier) {
     override suspend fun getCertificate(): X509Certificate? = null
 }
+

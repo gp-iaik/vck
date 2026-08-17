@@ -468,8 +468,9 @@ class DecryptJweWithEphemeralKey(
     override suspend operator fun invoke(
         jweObject: JweEncrypted,
     ) = catching {
-        val keyMaterial = jweObject.header.keyId?.let { ephemeralEncryptionKeyService.consumeKey(it) }
-            ?: fallbackKeyMaterial
+        val keyId = jweObject.header.keyId
+        val keyMaterial = keyId?.let { ephemeralEncryptionKeyService.consumeKey(it) }
+            ?: fallbackKeyMaterial?.takeIf { keyId == null || it.identifier == keyId }
             ?: throw IllegalArgumentException("No decryption key for kid ${jweObject.header.keyId}")
         DecryptJwe(keyMaterial)(jweObject).getOrThrow()
     }

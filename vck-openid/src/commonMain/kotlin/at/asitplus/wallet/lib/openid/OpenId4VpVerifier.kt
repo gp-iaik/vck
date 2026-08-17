@@ -25,7 +25,6 @@ import at.asitplus.wallet.lib.agent.Verifier
 import at.asitplus.wallet.lib.agent.VerifierAgent
 import at.asitplus.wallet.lib.cbor.VerifyCoseSignatureWithKey
 import at.asitplus.wallet.lib.cbor.VerifyCoseSignatureWithKeyFun
-import at.asitplus.wallet.lib.jws.DecryptJwe
 import at.asitplus.wallet.lib.jws.DecryptJweFun
 import at.asitplus.wallet.lib.jws.DecryptJweWithEphemeralKey
 import at.asitplus.wallet.lib.jws.SignJwt
@@ -66,7 +65,8 @@ class OpenId4VpVerifier @JvmOverloads constructor(
     /** Creates one ephemeral encryption key per authentication request, see OpenID4VP 1.0, Section 8.3. */
     private val ephemeralEncryptionKeyService: EphemeralEncryptionKeyService = EphemeralEncryptionKeyService(),
     @Deprecated("Will be derived from [ephemeralEncryptionKeyService] and [decryptionKeyMaterial]")
-    private val decryptJwe: DecryptJweFun = DecryptJweWithEphemeralKey(ephemeralEncryptionKeyService, decryptionKeyMaterial),
+    private val decryptJwe: DecryptJweFun =
+        DecryptJweWithEphemeralKey(ephemeralEncryptionKeyService, decryptionKeyMaterial),
     /** Signs authentication requests in [createSignedRequestObject]. */
     private val signAuthnRequest: SignJwtFun<AuthenticationRequestParameters> =
         SignJwt(keyMaterial, JwsHeaderClientIdScheme(clientIdScheme)),
@@ -107,6 +107,7 @@ class OpenId4VpVerifier @JvmOverloads constructor(
         createSessionTranscript = UrlSessionTranscriptCalculator(),
         decryptionKeyMaterial = decryptionKeyMaterial
     )
+
     private val responseParser = ResponseParser(
         decryptJwe = DecryptJweWithEphemeralKey(ephemeralEncryptionKeyService, decryptionKeyMaterial),
         verifyJwsObject = verifyJwsObject

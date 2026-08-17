@@ -24,6 +24,7 @@ import at.asitplus.wallet.lib.agent.EphemeralEncryptionKeyService
 import at.asitplus.wallet.lib.agent.KeyMaterial
 import at.asitplus.wallet.lib.data.CredentialPresentationRequest.DCQLRequest
 import at.asitplus.wallet.lib.data.toBase64UrlJsonString
+import at.asitplus.wallet.lib.extensions.getEncryptionTargetKey
 import at.asitplus.wallet.lib.jws.JwsContentTypeConstants
 import at.asitplus.wallet.lib.jws.SignJwtFun
 import at.asitplus.wallet.lib.utils.MapStore
@@ -175,10 +176,25 @@ internal class OpenId4VpRequestFactory(
             ?: throw IllegalArgumentException("Neither externalId nor state given")
         val authnRequest = stateToAuthnRequestStore.remove(storedId)
             ?: throw IllegalArgumentException("No authn request found for $storedId")
-        if (authnRequest.responseMode?.requiresEncryption == true)
-            require(input.hasBeenEncrypted) {
+        val ephemeralKey = authnRequest.clientMetadata?.jsonWebKeySet?.keys?.getEncryptionTargetKey()
+        val ephemeralKeyId = ephemeralKey?.keyId
+        if (authnRequest.responseMode?.requiresEncryption == true) {
+            require(input is ResponseParametersFrom.JweDecrypted) {
                 "response_mode requires encryption, but no encrypted response was given"
             }
+            val responseKeyId = input.jweDecrypted.header.keyId
+            if (ephemeralKey != null) {
+                requireNotNull(ephemeralKeyId) { "Authentication request encryption key has no kid" }
+                require(responseKeyId == ephemeralKeyId) {
+                    "Encrypted response key does not match the authentication request"
+                }
+            } else {
+                requireNotNull(decryptionKeyMaterial) { "No decryption key configured" }
+                require(responseKeyId == null || responseKeyId == decryptionKeyMaterial.identifier) {
+                    "Encrypted response key does not match the configured decryption key"
+                }
+            }
+        }
         return authnRequest
     }
 
