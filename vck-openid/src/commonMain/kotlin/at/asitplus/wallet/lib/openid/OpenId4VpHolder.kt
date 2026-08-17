@@ -80,9 +80,11 @@ class OpenId4VpHolder @JvmOverloads constructor(
     /** Advertised in [metadata] and compared against holder's requirements. */
     private val supportedAlgorithms: Set<SignatureAlgorithm> = setOf(SignatureAlgorithm.ECDSAwithSHA256),
     /** Signs the session transcript for mDoc responses. */
-    @Deprecated("signDeviceAuthDetached no longer has any effect because ISO Device signature" +
-            "creation has been moved into Holder's credential presentation. " +
-            "Signing function can be overridden in HolderAgent instead.")
+    @Deprecated(
+        "signDeviceAuthDetached no longer has any effect because ISO Device signature" +
+                "creation has been moved into Holder's credential presentation. " +
+                "Signing function can be overridden in HolderAgent instead."
+    )
     private val signDeviceAuthDetached: SignCoseDetachedFun<ByteArray> =
         SignCoseDetached(keyMaterial, CoseHeaderNone(), CoseHeaderNone()),
     @Deprecated("Support for SIOPv2 has been removed")
@@ -150,10 +152,7 @@ class OpenId4VpHolder @JvmOverloads constructor(
             issuer = clientId,
             authorizationEndpoint = authorizationEndpoint,
             responseTypesSupported = setOf(VP_TOKEN),
-            scopesSupported = setOf(OpenIdConstants.SCOPE_OPENID),
-            idTokenSigningAlgorithmsSupportedStrings = supportedJwsAlgorithms.toSet(),
             requestObjectSigningAlgorithmsSupportedStrings = supportedJwsAlgorithms.toSet(),
-            presentationDefinitionUriSupported = false,
             clientIdPrefixesSupported = listOf(
                 ClientIdScheme.PreRegistered,
                 ClientIdScheme.RedirectUri,
@@ -204,7 +203,7 @@ class OpenId4VpHolder @JvmOverloads constructor(
     ) = requestParser.parseRequestParameters(input)
         .getOrThrow() as RequestParametersFrom<AuthenticationRequestParameters>
 
-    @Deprecated("Use createAuthnErrorResponse with AuthorizationResponsePreparationState parameter",)
+    @Deprecated("Use createAuthnErrorResponse with AuthorizationResponsePreparationState parameter")
     suspend fun createAuthnErrorResponse(
         error: Throwable,
         request: RequestParametersFrom<AuthenticationRequestParameters>,

@@ -203,13 +203,6 @@ data class OAuth2AuthorizationServerMetadata(
     val idTokenTypesSupported: Set<IdTokenType>? = null,
 
     /**
-     * OID4VP: OPTIONAL. Boolean value specifying whether the Wallet supports the transfer of `presentation_definition`
-     * by reference, with true indicating support. If omitted, the default value is true.
-     */
-    @SerialName("presentation_definition_uri_supported")
-    val presentationDefinitionUriSupported: Boolean = true,
-
-    /**
      * OID4VP: REQUIRED. An object containing a list of key value pairs, where the key is a string identifying a
      * Credential format supported by the Wallet. Valid Credential format identifier values are defined in Annex E
      * of OpenID.VCI. Other values may be used when defined in the profiles of this specification.
