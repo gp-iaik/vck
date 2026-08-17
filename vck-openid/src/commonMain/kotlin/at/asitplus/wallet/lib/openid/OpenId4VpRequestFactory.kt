@@ -20,6 +20,7 @@ import at.asitplus.signum.indispensable.josef.JwsCompactTyped
 import at.asitplus.signum.indispensable.josef.toJsonWebKey
 import at.asitplus.signum.indispensable.josef.toJwsAlgorithm
 import at.asitplus.wallet.lib.NonceService
+import at.asitplus.wallet.lib.agent.EphemeralEncryptionKeyService
 import at.asitplus.wallet.lib.agent.KeyMaterial
 import at.asitplus.wallet.lib.data.CredentialPresentationRequest.DCQLRequest
 import at.asitplus.wallet.lib.data.toBase64UrlJsonString
@@ -48,8 +49,10 @@ internal sealed interface RequestObjectSigning {
 internal class OpenId4VpRequestFactory(
     /** Scheme to use for our client identifier. */
     private val clientIdScheme: ClientIdScheme,
-    /** Advertised in [metadata] so that holders can encrypt responses. */
-    private val decryptionKeyMaterial: KeyMaterial,
+    /** Creates one ephemeral encryption key per authentication request, see OpenID4VP 1.0, Section 8.3. */
+    private val ephemeralEncryptionKeyService: EphemeralEncryptionKeyService,
+    /** Advertised in [metadata] so that holders can encrypt responses, for out-of-band metadata only. */
+    private val decryptionKeyMaterial: KeyMaterial?,
     /** Signs authentication requests in [createSignedRequestObject]. */
     private val signAuthnRequest: SignJwtFun<AuthenticationRequestParameters>,
     /** Creates OpenID4VP request nonces. */
@@ -68,16 +71,15 @@ internal class OpenId4VpRequestFactory(
         .mapNotNull { it.toCoseAlgorithm().getOrNull()?.coseValue }
 
     /**
-     * Creates the [at.asitplus.openid.RelyingPartyMetadata], without encryption (see [metadataWithEncryption])
+     * Creates the [at.asitplus.openid.RelyingPartyMetadata], without encryption (see [metadataWithEncryption]).
+     * Carries a JSON Web Key Set only if a long-lived [decryptionKeyMaterial] has been configured to be distributed
+     * out-of-band, requests built here embed a key specific to that request instead, see
+     * [metadataWithEphemeralEncryptionKey].
      */
     val metadata by lazy {
         RelyingPartyMetadata(
             redirectUris = listOfNotNull((clientIdScheme as? ClientIdScheme.RedirectUri)?.redirectUri),
-            jsonWebKeySet = JsonWebKeySet(
-                listOf(
-                    decryptionKeyMaterial.publicKey.toJsonWebKey(decryptionKeyMaterial.identifier).withAlgorithm()
-                )
-            ),
+            jsonWebKeySet = decryptionKeyMaterial?.let { JsonWebKeySet(listOf(it.toEncryptionJsonWebKey())) },
             vpFormatsSupported = VpFormatsSupported(
                 vcJwt = SupportedAlgorithmsContainerJwt(
                     algorithmStrings = supportedJwsAlgorithms.toSet()
@@ -97,15 +99,28 @@ internal class OpenId4VpRequestFactory(
     /**
      * Creates the [RelyingPartyMetadata], but with parameters set to request encryption of pushed authentication
      * responses, see [RelyingPartyMetadata.encryptedResponseEncValues].
+     *
+     * Carries the long-lived [decryptionKeyMaterial], so this is only useful to publish out-of-band, for client
+     * identifier schemes that do not convey client metadata in the request itself. Requests built here embed a key
+     * specific to that request instead, see [metadataWithEphemeralEncryptionKey].
      */
-    val metadataWithEncryption by lazy {
-        metadata.copy(
-            encryptedResponseEncValuesSupportedString = supportedJweEncryptionAlgorithms.map { it.identifier }.toSet(),
-            jsonWebKeySet = metadata.jsonWebKeySet?.let {
-                JsonWebKeySet(it.keys.map { it.copy(publicKeyUse = "enc") })
-            }
-        )
-    }
+    val metadataWithEncryption by lazy { metadata.requestingEncryptedResponses() }
+
+    /**
+     * Creates the [RelyingPartyMetadata] with an encryption key valid for exactly one authentication request, as
+     * required by
+     * [OpenID4VP 1.0, 8.3](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#name-encrypted-responses)
+     * and
+     * [OpenID4VC HAIP 1.0](https://openid.net/specs/openid4vc-high-assurance-interoperability-profile-1_0-final.html),
+     */
+    private suspend fun metadataWithEphemeralEncryptionKey(): RelyingPartyMetadata = metadata.copy(
+        jsonWebKeySet = JsonWebKeySet(listOf(ephemeralEncryptionKeyService.createKey().toEncryptionJsonWebKey()))
+    ).requestingEncryptedResponses()
+
+    private fun RelyingPartyMetadata.requestingEncryptedResponses(): RelyingPartyMetadata = copy(
+        encryptedResponseEncValuesSupportedString = supportedJweEncryptionAlgorithms.map { it.identifier }.toSet(),
+        jsonWebKeySet = jsonWebKeySet?.let { JsonWebKeySet(it.keys.map { key -> key.copy(publicKeyUse = "enc") }) }
+    )
 
     suspend fun createPlainAuthnRequest(
         requestOptions: OpenId4VpRequestOptions,
@@ -167,56 +182,55 @@ internal class OpenId4VpRequestFactory(
         return authnRequest
     }
 
-    /**
-     * The DC API has no other channel to convey the verifier's encryption key: wallets can only encrypt responses
-     * with a key from [at.asitplus.openid.AuthenticationRequestParameters.clientMetadata] in the request itself.
-     */
-    fun requireEncryptionKeyConveyed(requestOptions: OpenId4VpRequestOptions): OpenId4VpRequestOptions =
-        requestOptions.also {
-            if (it.responseMode.requiresEncryption) {
-                requireNotNull(it.clientMetadata()?.jsonWebKeySet) {
-                    "Encrypted responses require client metadata with a JSON Web Key Set in the request, " +
-                            "which is not populated for this client identifier scheme"
-                }
-            }
-        }
-
     private suspend fun OpenId4VpRequestOptions.toAuthnRequest(
         requestObjectParameters: RequestObjectParameters?,
-    ): AuthenticationRequestParameters = AuthenticationRequestParameters(
-        responseType = responseType,
-        clientId = if (populateClientId) clientIdScheme.clientId else null,
-        redirectUrl = if (!isAnyDirectPost) clientIdScheme.redirectUri else null,
-        responseUrl = responseUrl,
-        // Using scope as an alias for a well-defined DCQL Query is not supported
-        scope = null,
-        nonce = nonceService.provideNonce(),
-        walletNonce = requestObjectParameters?.walletNonce,
-        clientMetadata = clientMetadata(),
-        responseMode = responseMode,
-        // the DC API binds request and response through the browser, not through a `state`
-        state = if (isAnyDcApi) null else state,
-        dcqlQuery = (presentationRequest as? DCQLRequest)?.dcqlQuery,
-        transactionData = transactionData?.map { it.toBase64UrlJsonString() },
-        expectedOrigins = expectedOrigins,
-        verifierInfo = verifierInfo,
-    )
+    ): AuthenticationRequestParameters {
+        // one ephemeral encryption key per request, so this must be evaluated exactly once
+        val clientMetadata = clientMetadata()
+        if (isAnyDcApi && responseMode.requiresEncryption) {
+            // The DC API has no other channel to convey the verifier's encryption key: wallets can only encrypt
+            // responses with a key from the client metadata in the request itself.
+            requireNotNull(clientMetadata?.jsonWebKeySet) {
+                "Encrypted responses require client metadata with a JSON Web Key Set in the request, " +
+                        "which is not populated for this client identifier scheme"
+            }
+        }
+        return AuthenticationRequestParameters(
+            responseType = responseType,
+            clientId = if (populateClientId) clientIdScheme.clientId else null,
+            redirectUrl = if (!isAnyDirectPost) clientIdScheme.redirectUri else null,
+            responseUrl = responseUrl,
+            // Using scope as an alias for a well-defined DCQL Query is not supported
+            scope = null,
+            nonce = nonceService.provideNonce(),
+            walletNonce = requestObjectParameters?.walletNonce,
+            clientMetadata = clientMetadata,
+            responseMode = responseMode,
+            // the DC API binds request and response through the browser, not through a `state`
+            state = if (isAnyDcApi) null else state,
+            dcqlQuery = (presentationRequest as? DCQLRequest)?.dcqlQuery,
+            transactionData = transactionData?.map { it.toBase64UrlJsonString() },
+            expectedOrigins = expectedOrigins,
+            verifierInfo = verifierInfo,
+        )
+    }
 
-    private fun OpenId4VpRequestOptions.clientMetadata(): RelyingPartyMetadata? = when (verifierMetadataMode) {
+    private suspend fun OpenId4VpRequestOptions.clientMetadata(): RelyingPartyMetadata? = when (verifierMetadataMode) {
         VerifierMetadataMode.OMIT_IF_OUT_OF_BAND -> null
         VerifierMetadataMode.AUTO -> when (clientIdScheme) {
             is ClientIdScheme.RedirectUri,
             is ClientIdScheme.VerifierAttestation,
             is ClientIdScheme.CertificateSanDns,
             is ClientIdScheme.CertificateHash,
-                -> if (responseMode.requiresEncryption) metadataWithEncryption else metadata
+                -> if (responseMode.requiresEncryption) metadataWithEphemeralEncryptionKey() else metadata
 
             else -> null
         }
     }
 
     // should always be ecdh-es for encryption
-    private fun JsonWebKey.withAlgorithm(): JsonWebKey = this.copy(algorithm = JweAlgorithm.ECDH_ES)
+    private fun KeyMaterial.toEncryptionJsonWebKey(): JsonWebKey =
+        publicKey.toJsonWebKey(identifier).copy(algorithm = JweAlgorithm.ECDH_ES)
 
     companion object {
         /**

@@ -30,11 +30,13 @@ import at.asitplus.signum.supreme.asymmetric.HPKE
 import at.asitplus.testballoon.matrix.matrixSuite
 import at.asitplus.wallet.lib.RequestOptionsCredential
 import at.asitplus.wallet.lib.agent.CredentialToBeIssued
+import at.asitplus.wallet.lib.agent.EphemeralEncryptionKeyService
 import at.asitplus.wallet.lib.agent.EphemeralKeyWithSelfSignedCert
 import at.asitplus.wallet.lib.agent.EphemeralKeyWithoutCert
 import at.asitplus.wallet.lib.agent.HolderAgent
 import at.asitplus.wallet.lib.agent.IssuerAgent
 import at.asitplus.wallet.lib.agent.toStoreCredentialInput
+import at.asitplus.wallet.lib.utils.DefaultMapStore
 import at.asitplus.wallet.lib.data.ConstantIndex
 import at.asitplus.wallet.lib.data.CredentialPresentation
 import at.asitplus.wallet.lib.data.CredentialPresentationRequest
@@ -91,7 +93,7 @@ val IsoMdocDcapiResponseBuilderTest by matrixSuite {
             pt = plaintext,
         )
 
-        val skR = fixture.verifierKey.exportPrivateKey().getOrThrow()
+        val skR = CryptoPrivateKey.decodeFromPem(fixture.verifierKeyPem).getOrThrow()
             .shouldBeInstanceOf<CryptoPrivateKey.EC.WithPublicKey>()
 
         hpke.OpenBase(
@@ -308,13 +310,13 @@ private suspend fun dcapiFixture(
         )
     )
 ): DcapiFixture {
-    val verifierKey = EphemeralKeyWithoutCert()
+    val ephemeralKeyStore = DefaultMapStore<String, String>()
     val verifier = DcApiVerifier(
         clientIdScheme = ClientIdScheme.PreRegistered(
             clientId = "dc-api-rp",
             redirectUri = "https://verifier.example.com/callback",
         ),
-        decryptionKeyMaterial = verifierKey,
+        ephemeralEncryptionKeyService = EphemeralEncryptionKeyService(ephemeralKeyStore),
     )
     val presentationRequestBuilder = CredentialPresentationRequestBuilder(requestOptions)
     val isoRequest = verifier.createAuthnRequest(
@@ -329,7 +331,7 @@ private suspend fun dcapiFixture(
         .shouldBeInstanceOf<DigitalCredentialGetRequest.IsoMdoc>().data
     return DcapiFixture(
         verifier = verifier,
-        verifierKey = verifierKey,
+        verifierKeyPem = ephemeralKeyStore.get(STATE) ?: error("No ephemeral encryption key stored for $STATE"),
         presentationRequestBuilder = presentationRequestBuilder,
         walletRequest = RequestParametersFrom.IsoMdocDcApi(
             parameters = RequestParametersFrom.IsoMdocDcApi.IsoMdocRequestWrapper(isoRequest),
@@ -372,7 +374,8 @@ private object SecondAtomicAttribute : IsoMdocCredentialScheme {
 
 private data class DcapiFixture(
     val verifier: DcApiVerifier,
-    val verifierKey: EphemeralKeyWithoutCert,
+    /** The ephemeral encryption key the verifier created for the request under [STATE], PKCS#8 PEM encoded. */
+    val verifierKeyPem: String,
     val presentationRequestBuilder: CredentialPresentationRequestBuilder,
     val walletRequest: RequestParametersFrom.IsoMdocDcApi,
 )

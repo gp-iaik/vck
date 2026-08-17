@@ -49,6 +49,7 @@ import at.asitplus.signum.supreme.sign.Signer
 import at.asitplus.signum.supreme.sign.Verifier
 import at.asitplus.signum.supreme.symmetric.decrypt
 import at.asitplus.signum.supreme.symmetric.encrypt
+import at.asitplus.wallet.lib.agent.EphemeralEncryptionKeyService
 import at.asitplus.wallet.lib.agent.KeyMaterial
 import at.asitplus.wallet.lib.agent.PublishedKeyMaterial
 import at.asitplus.wallet.lib.agent.TrustedCertificates
@@ -453,6 +454,25 @@ class DecryptJwe(
         JweUtils.decryptJwe(keyMaterial, header, jweObject)
     }
 
+}
+
+/**
+ * Decrypts JWE payloads with the ephemeral key referenced by the JWE's `kid` header, as per
+ * [OpenID4VP 1.0, 8.3](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#name-encrypted-responses).
+ */
+class DecryptJweWithEphemeralKey(
+    private val ephemeralEncryptionKeyService: EphemeralEncryptionKeyService,
+    /** Long-lived key to fall back to, for client identifier schemes without client metadata in the request. */
+    private val fallbackKeyMaterial: KeyMaterial? = null,
+) : DecryptJweFun {
+    override suspend operator fun invoke(
+        jweObject: JweEncrypted,
+    ) = catching {
+        val keyMaterial = jweObject.header.keyId?.let { ephemeralEncryptionKeyService.consumeKey(it) }
+            ?: fallbackKeyMaterial
+            ?: throw IllegalArgumentException("No decryption key for kid ${jweObject.header.keyId}")
+        DecryptJwe(keyMaterial)(jweObject).getOrThrow()
+    }
 }
 
 /**

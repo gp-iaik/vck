@@ -21,15 +21,16 @@ import at.asitplus.iso.sha256
 import at.asitplus.iso.wrapInCborTag
 import at.asitplus.openid.OpenIdConstants
 import at.asitplus.openid.dcql.DCQLClaimsPathPointer
+import at.asitplus.signum.indispensable.CryptoPrivateKey
 import at.asitplus.signum.indispensable.CryptoPublicKey
 import at.asitplus.signum.indispensable.cosef.io.ByteStringWrapper
 import at.asitplus.signum.indispensable.cosef.io.coseCompliantSerializer
-import at.asitplus.signum.indispensable.cosef.toCoseKey
 import at.asitplus.signum.supreme.asymmetric.HPKE
 import at.asitplus.testballoon.matrix.fixture
 import at.asitplus.testballoon.matrix.matrixSuite
 import at.asitplus.wallet.lib.RequestOptionsCredential
 import at.asitplus.wallet.lib.agent.CreatePresentationResult
+import at.asitplus.wallet.lib.agent.EphemeralEncryptionKeyService
 import at.asitplus.wallet.lib.agent.EphemeralKeyWithSelfSignedCert
 import at.asitplus.wallet.lib.agent.EphemeralKeyWithoutCert
 import at.asitplus.wallet.lib.agent.Holder
@@ -53,6 +54,7 @@ import io.kotest.matchers.collections.shouldBeSingleton
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import kotlinx.coroutines.runBlocking
 import kotlinx.datetime.LocalDate
@@ -89,7 +91,7 @@ val Iso180137AnnexCProtocolTest by matrixSuite {
                 issueAndStoreIsoMdoc(agent, holderKeyMaterial, issuer)
             }
             object {
-                val decryptionKeyMaterial = EphemeralKeyWithoutCert()
+                val ephemeralKeyStore = DefaultMapStore<String, String>()
                 val stateToIsoMdocRequestStore = DefaultMapStore<String, IsoMdocRequest>()
                 val verifier = DcApiVerifier(
                     clientIdScheme = ClientIdScheme.PreRegistered(
@@ -97,7 +99,7 @@ val Iso180137AnnexCProtocolTest by matrixSuite {
                         redirectUri = "https://example.com/callback",
                     ),
                     stateToIsoMdocRequestStore = stateToIsoMdocRequestStore,
-                    decryptionKeyMaterial = decryptionKeyMaterial,
+                    ephemeralEncryptionKeyService = EphemeralEncryptionKeyService(ephemeralKeyStore),
                 )
 
                 /** Extracts the Annex C request from the browser-facing [CredentialRequestOptions]. */
@@ -114,6 +116,11 @@ val Iso180137AnnexCProtocolTest by matrixSuite {
                     .digital.requests.shouldBeSingleton().first()
                     .shouldBeInstanceOf<DigitalCredentialGetRequest.IsoMdoc>()
                     .data
+
+                /** The ephemeral encryption key the verifier created for the request identified by [state]. */
+                suspend fun storedEphemeralKey(state: String): CryptoPrivateKey.EC.WithPublicKey =
+                    CryptoPrivateKey.decodeFromPem(ephemeralKeyStore.get(state).shouldNotBeNull()).getOrThrow()
+                        .shouldBeInstanceOf<CryptoPrivateKey.EC.WithPublicKey>()
 
                 suspend fun walletResponse(
                     isoMdocRequest: IsoMdocRequest,
@@ -135,11 +142,20 @@ val Iso180137AnnexCProtocolTest by matrixSuite {
                 }
                 encryptionInfo.type shouldBe TYPE_DCAPI
                 encryptionInfo.encryptionParameters.nonce.shouldNotBeNull()
-                encryptionInfo.encryptionParameters.recipientPublicKey shouldBe
-                        f.decryptionKeyMaterial.publicKey.toCoseKey().getOrThrow()
+                // the recipient key is ephemeral for this request, its private part kept for [validateIsoResponse]
+                encryptionInfo.encryptionParameters.recipientPublicKey.toCryptoPublicKey().getOrThrow() shouldBe
+                        f.storedEphemeralKey(transactionId).publicKey
             }
 
             f.stateToIsoMdocRequestStore.get(transactionId) shouldBe isoMdocRequest
+        }
+
+        test("createAuthnRequest uses a fresh encryption key for every request") { f ->
+            val first = f.createIsoMdocRequest(uuid4().toString())
+            val second = f.createIsoMdocRequest(uuid4().toString())
+
+            first.encryptionInfo.encryptionParameters.recipientPublicKey shouldNotBe
+                    second.encryptionInfo.encryptionParameters.recipientPublicKey
         }
 
         test("Annex C walk-through: wallet response validates and contains requested claims") { f ->

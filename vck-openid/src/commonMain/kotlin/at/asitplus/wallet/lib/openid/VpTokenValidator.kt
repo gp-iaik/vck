@@ -13,12 +13,14 @@ import at.asitplus.openid.dcql.DCQLQuery
 import at.asitplus.openid.dcql.DCQLQueryResponse
 import at.asitplus.signum.indispensable.cosef.io.coseCompliantSerializer
 import at.asitplus.signum.indispensable.io.Base64UrlStrict
+import at.asitplus.signum.indispensable.josef.JsonWebKey
 import at.asitplus.signum.indispensable.josef.JwsCompactTyped
 import at.asitplus.wallet.lib.MdocDeviceSignatureVerifier
 import at.asitplus.wallet.lib.agent.KeyMaterial
 import at.asitplus.wallet.lib.agent.NonceChallengeVerifier.ChallengeSession
 import at.asitplus.wallet.lib.agent.Verifier.VerifyPresentationResult
 import at.asitplus.wallet.lib.data.VerifiablePresentationJws
+import at.asitplus.wallet.lib.extensions.getEncryptionTargetKey
 import at.asitplus.wallet.lib.jws.SdJwtSigned
 import at.asitplus.wallet.lib.procedures.dcql.DCQLQueryAdapter
 import io.matthewnelson.encoding.core.Decoder.Companion.decodeToByteArray
@@ -44,8 +46,8 @@ internal class VpTokenValidator(
     private val mdocDeviceSignatureVerifier: MdocDeviceSignatureVerifier,
     /** Calculates the ISO session transcript for the transport the response was received over. */
     private val createSessionTranscript: SessionTranscriptCalculator,
-    /** To be used for ISO session transcript calculation when the response has been encrypted. */
-    private val decryptionKeyMaterial: KeyMaterial,
+    /** Long-lived decryption key, when the request did not convey the key itself (it was distributed out-of-band). */
+    private val decryptionKeyMaterial: KeyMaterial?,
 ) {
 
     /**
@@ -70,6 +72,10 @@ internal class VpTokenValidator(
         val query = authnRequest.dcqlQuery
             ?: throw IllegalArgumentException("DCQL Query not present in $authnRequest")
         val clientIdRequired = responseParameters.clientIdRequired
+        val recipientKey = if (responseParameters.hasBeenEncrypted) {
+            authnRequest.clientMetadata?.jsonWebKeySet?.keys?.getEncryptionTargetKey()
+                ?: decryptionKeyMaterial?.jsonWebKey
+        } else null
 
         val presentation = vpToken.jsonObject.mapKeys {
             DCQLCredentialQueryIdentifier(it.key)
@@ -82,13 +88,13 @@ internal class VpTokenValidator(
                     claimFormat = credentialQuery.format.toClaimFormat(),
                     relatedPresentation = it.jsonPrimitive,
                     session = session,
-                    input = responseParameters,
                     clientId = authnRequest.clientId,
                     responseUrl = authnRequest.responseUrl ?: authnRequest.redirectUrlExtracted,
                     transactionData = authnRequest.transactionData,
                     clientIdRequired = clientIdRequired,
                     origin = origin,
                     requireCryptographicHolderBinding = query.credentialQuery(credentialQueryId)?.requireCryptographicHolderBinding,
+                    recipientKey = recipientKey,
                 )
             }
         }
@@ -116,6 +122,7 @@ internal class VpTokenValidator(
         CredentialFormatEnum.DC_SD_JWT -> ClaimFormat.SD_JWT
         CredentialFormatEnum.MSO_MDOC,
         CredentialFormatEnum.MSO_MDOC_ZK -> ClaimFormat.MSO_MDOC
+
         CredentialFormatEnum.NONE,
         CredentialFormatEnum.JWT_VC_JSON_LD,
         CredentialFormatEnum.JSON_LD,
@@ -126,13 +133,13 @@ internal class VpTokenValidator(
         claimFormat: ClaimFormat,
         relatedPresentation: JsonElement,
         session: ChallengeSession,
-        input: ResponseParametersFrom,
         clientId: String?,
         responseUrl: String?,
         transactionData: List<TransactionDataBase64Url>?,
         clientIdRequired: Boolean,
         origin: String?,
         requireCryptographicHolderBinding: Boolean? = null,
+        recipientKey: JsonWebKey?,
     ): KmmResult<VerifyPresentationResult> = catching {
         when (claimFormat) {
             ClaimFormat.SD_JWT -> {
@@ -173,7 +180,7 @@ internal class VpTokenValidator(
                         responseUrl = responseUrl,
                         clientIdRequired = clientIdRequired,
                         origin = origin,
-                        recipientKey = if (input.hasBeenEncrypted) decryptionKeyMaterial.jsonWebKey else null,
+                        recipientKey = recipientKey,
                     )
                 )
             }

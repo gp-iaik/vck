@@ -8,7 +8,7 @@ Release 8.0.0 (unreleased):
     - Derive SD-JWT Digital Credentials API identifiers from the JWT ID or serialized credential instead of the subject
 - Verifiable Presentations:
     - Compute ISO mDoc `DeviceAuthentication` signatures automatically using the `calcIsoSessionTranscript` callback instead of requiring `calcIsoDeviceSignaturePlain` 
-    - Replace `PresentationRequestParameters.calcIsoDeviceSignaturePlain` with the PresentationRequestParameters.calcIsoSessionTranscript` callback to return a nullable `SessionTranscript?`. DeviceSignature and DeviceAuth is now calculated based on the Transcript.
+    - Replace `PresentationRequestParameters.calcIsoDeviceSignaturePlain` with the `PresentationRequestParameters.calcIsoSessionTranscript` callback to return a nullable `SessionTranscript`. DeviceSignature and DeviceAuth is now calculated based on the Transcript.
     - Add optional `signDeviceAuthDetached` parameter to `HolderAgent` and `VerifiablePresentationFactory` to centralize ISO mDoc device authentication within the holder
 - OpenID for Verifiable Presentations:
     - Remove support for Presentation Exchange, since OpenID4VP 1.0 only supports DCQL
@@ -27,6 +27,11 @@ Release 8.0.0 (unreleased):
     - Add `VerifierInfo` to `OpenId4VpRequestOptions`
     - Do not accept responses for the same `state` twice for OpenID4VP flows
     - Do not accept responses for the same `externalId` twice for DCAPI flows
+    - Supply an ephemeral response encryption key specific to each authentication request in its client metadata, as required by OpenID4VP 1.0, Section 8.3, and OpenID4VC HAIP. Keys are identified by the `kid` of the JWE, and also used as the HPKE recipient key for ISO/IEC 18013-7 Annex C requests, where they are identified by the request's `state`
+    - Add `EphemeralEncryptionKeyService` holding these keys in a `MapStore<String, String>`, PKCS#8 PEM encoded, so that applications running several instances can synchronize them, along with the parameter `ephemeralEncryptionKeyService` on `OpenId4VpVerifier` and `DcApiVerifier`. Every key decrypts at most one response
+    - Add `DecryptJweWithEphemeralKey`, resolving the decryption key from the `kid` header of the JWE
+    - In `OpenId4VpVerifier` and `DcApiVerifier` the `decryptionKeyMaterial` is now nullable and defaults to `null`: it is only advertised in `metadata` resp. `metadataWithEncryption`, i.e. for client identifier schemes that distribute it out-of-band, which is not conformant to HAIP
+    - In `OpenId4VpVerifier` and `DcApiVerifier` remove the `decryptJwe` function from the list of constructor arguments
     - Consume the request's nonce when validating an authentication response, regardless of the validation result, i.e. authentication responses are not retryable
 - OpenID for Verifiable Credential Issuance:
     - Rework validation of key attestation statements

@@ -57,7 +57,6 @@ val OpenId4VpIsoProtocolTest by matrixSuite {
                 val holderAgent = agent
                 val verifierOid4vp = OpenId4VpVerifier(
                     keyMaterial = verifierKeyMaterial,
-                    decryptionKeyMaterial = verifierKeyMaterial,
                     clientIdScheme = ClientIdScheme.RedirectUri(clientId),
                     //nonceService = FixedNonceService(),
                 )

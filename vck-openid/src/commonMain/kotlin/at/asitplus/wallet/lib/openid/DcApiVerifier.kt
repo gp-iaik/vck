@@ -37,6 +37,7 @@ import at.asitplus.signum.supreme.sign.Signer
 import at.asitplus.wallet.lib.DefaultNonceService
 import at.asitplus.wallet.lib.MdocDeviceSignatureVerifier
 import at.asitplus.wallet.lib.NonceService
+import at.asitplus.wallet.lib.agent.EphemeralEncryptionKeyService
 import at.asitplus.wallet.lib.agent.EphemeralKeyWithoutCert
 import at.asitplus.wallet.lib.agent.KeyMaterial
 import at.asitplus.wallet.lib.agent.NonceChallengeVerifier
@@ -47,8 +48,8 @@ import at.asitplus.wallet.lib.cbor.VerifyCoseSignatureWithKey
 import at.asitplus.wallet.lib.cbor.VerifyCoseSignatureWithKeyFun
 import at.asitplus.wallet.lib.data.CredentialPresentationRequest.DCQLRequest
 import at.asitplus.wallet.lib.data.CredentialPresentationRequest.IsoDeviceRetrieval
-import at.asitplus.wallet.lib.jws.DecryptJwe
 import at.asitplus.wallet.lib.jws.DecryptJweFun
+import at.asitplus.wallet.lib.jws.DecryptJweWithEphemeralKey
 import at.asitplus.wallet.lib.jws.SignJwt
 import at.asitplus.wallet.lib.jws.SignJwtFun
 import at.asitplus.wallet.lib.jws.VerifyJwsObject
@@ -79,10 +80,18 @@ class DcApiVerifier @JvmOverloads constructor(
     private val keyMaterial: KeyMaterial = EphemeralKeyWithoutCert(),
     /** Verifies the holder's response against our identifier from [clientIdScheme]. */
     val verifier: Verifier = VerifierAgent(identifier = clientIdScheme.clientId),
-    /** Advertised in [metadata] so that holders can encrypt responses. */
-    private val decryptionKeyMaterial: KeyMaterial = EphemeralKeyWithoutCert(),
-    /** Decrypts encrypted responses from holders. */
-    private val decryptJwe: DecryptJweFun = DecryptJwe(decryptionKeyMaterial),
+    /**
+     * Long-lived key advertised in [metadata] so that holders can encrypt responses, but **only** for client
+     * identifier schemes that do not convey client metadata in the request, i.e. where this key is distributed
+     * out-of-band. This is not conformant to OpenID4VC HAIP, so leave it `null` to have every request carry its own
+     * ephemeral encryption key, see [ephemeralEncryptionKeyService].
+     */
+    private val decryptionKeyMaterial: KeyMaterial? = null,
+    /** Creates one ephemeral encryption key per authentication request (Annex C and OpenID4VP) */
+    private val ephemeralEncryptionKeyService: EphemeralEncryptionKeyService = EphemeralEncryptionKeyService(),
+    @Deprecated("Will be derived from [ephemeralEncryptionKeyService] and [decryptionKeyMaterial]")
+    private val decryptJwe: DecryptJweFun =
+        DecryptJweWithEphemeralKey(ephemeralEncryptionKeyService, decryptionKeyMaterial),
     /** Signs authentication requests for signed DC API requests. */
     private val signAuthnRequest: SignJwtFun<AuthenticationRequestParameters> =
         SignJwt(keyMaterial, JwsHeaderClientIdScheme(clientIdScheme)),
@@ -101,7 +110,6 @@ class DcApiVerifier @JvmOverloads constructor(
     /** Algorithms supported to decrypt responses from wallets, for [metadataWithEncryption]. */
     private val supportedJweEncryptionAlgorithms: Set<JweEncryption> = JweEncryption.entries.toSet(),
 ) {
-
     private val mdocDeviceSignatureVerifier = MdocDeviceSignatureVerifier(verifyCoseSignature = verifyCoseSignature)
 
     /** Cipher suite to decrypt responses acc. to ISO/IEC 18013-7 Annex C */
@@ -114,6 +122,7 @@ class DcApiVerifier @JvmOverloads constructor(
     )
     private val requestFactory = OpenId4VpRequestFactory(
         clientIdScheme = clientIdScheme,
+        ephemeralEncryptionKeyService = ephemeralEncryptionKeyService,
         decryptionKeyMaterial = decryptionKeyMaterial,
         signAuthnRequest = signAuthnRequest,
         nonceService = nonceService,
@@ -126,7 +135,10 @@ class DcApiVerifier @JvmOverloads constructor(
         createSessionTranscript = DcApiSessionTranscriptCalculator(),
         decryptionKeyMaterial = decryptionKeyMaterial,
     )
-    private val responseParser = ResponseParser(decryptJwe, verifyJwsObject)
+    private val responseParser = ResponseParser(
+        decryptJwe = DecryptJweWithEphemeralKey(ephemeralEncryptionKeyService, decryptionKeyMaterial),
+        verifyJwsObject = verifyJwsObject
+    )
 
     /**
      * Creates the [at.asitplus.openid.RelyingPartyMetadata], without encryption (see [metadataWithEncryption])
@@ -170,48 +182,39 @@ class DcApiVerifier @JvmOverloads constructor(
     ): DigitalCredentialGetRequest = when (this) {
         is DcApiCreationOptions.OpenId4VpUnsigned -> OpenId4VpUnsigned(
             // client_id MUST be omitted in unsigned requests, per OpenID4VP 1.0 Appendix A.3.1
-            requestFactory.createPlainAuthnRequest(
-                requestFactory.requireEncryptionKeyConveyed(requestOptions).copy(populateClientId = false)
-            )
+            requestFactory.createPlainAuthnRequest(requestOptions.copy(populateClientId = false))
         )
 
         is DcApiCreationOptions.OpenId4VpSigned -> OpenId4VpSigned(
             SignedDataElement(
                 requestFactory.createSignedRequestObject(
-                    requestFactory.requireEncryptionKeyConveyed(requestOptions),
+                    requestOptions,
                     RequestObjectSigning.DcApi,
                 ).getOrThrow().jws
             )
         )
 
-        DcApiCreationOptions.Iso180137AnnexC -> when (requestOptions.presentationRequest) {
-            is DCQLRequest -> IsoMdoc(
-                IsoMdocRequest(
-                    deviceRequest = requestOptions.presentationRequest.dcqlQuery.toIso180137AnnexCDeviceRequest(),
-                    encryptionInfo = EncryptionInfo(
-                        type = TYPE_DCAPI,
-                        encryptionParameters = EncryptionParameters(
-                            nonceService.provideNonce().toByteArray(),
-                            decryptionKeyMaterial.publicKey.toCoseKey().getOrThrow()
-                        )
-                    )
-                ).also { stateToIsoMdocRequestStore.put(requestOptions.state, it) }
+        DcApiCreationOptions.Iso180137AnnexC -> {
+            // the recipient key is ephemeral for this request, and recovered in [validateIsoResponse]
+            val encryptionInfo = EncryptionInfo(
+                type = TYPE_DCAPI,
+                encryptionParameters = EncryptionParameters(
+                    nonceService.provideNonce().toByteArray(),
+                    ephemeralEncryptionKeyService.createKey(requestOptions.state)
+                        .publicKey.toCoseKey().getOrThrow()
+                )
             )
-
-            is IsoDeviceRetrieval -> IsoMdoc(
-                IsoMdocRequest(
-                    deviceRequest = requestOptions.presentationRequest.deviceRequest,
-                    encryptionInfo = EncryptionInfo(
-                        type = TYPE_DCAPI,
-                        encryptionParameters = EncryptionParameters(
-                            nonceService.provideNonce().toByteArray(),
-                            decryptionKeyMaterial.publicKey.toCoseKey().getOrThrow()
-                        )
-                    )
-                ).also { stateToIsoMdocRequestStore.put(requestOptions.state, it) }
+            val deviceRequest = when (requestOptions.presentationRequest) {
+                is DCQLRequest -> requestOptions.presentationRequest.dcqlQuery.toIso180137AnnexCDeviceRequest()
+                is IsoDeviceRetrieval -> requestOptions.presentationRequest.deviceRequest
+                else -> throw IllegalArgumentException(
+                    "ISO 18013-7 Annex C requires a Device Request or DCQL presentation"
+                )
+            }
+            IsoMdoc(
+                IsoMdocRequest(deviceRequest = deviceRequest, encryptionInfo = encryptionInfo)
+                    .also { stateToIsoMdocRequestStore.put(requestOptions.state, it) }
             )
-
-            else -> throw IllegalArgumentException("ISO 18013-7 Annex C requires a Device Request or DCQL presentation")
         }
     }
 
@@ -304,8 +307,8 @@ class DcApiVerifier @JvmOverloads constructor(
     ): KmmResult<Iso180137AnnexCWrapper> = catching {
         val isoMdocRequest = stateToIsoMdocRequestStore.remove(externalId)
             ?: throw IllegalStateException("Can't load request for response to $externalId")
-        val decryptionKey = decryptionKeyMaterial.getUnderLyingSigner() as? Signer.ECDSA
-            ?: throw IllegalStateException("Expected ECDSA decryption key material")
+        val decryptionKey = ephemeralEncryptionKeyService.consumeKey(externalId)?.getUnderLyingSigner() as? Signer.ECDSA
+            ?: throw IllegalStateException("Can't load ephemeral decryption key for response to $externalId")
         val serializedOrigin = expectedOrigin.serializeOrigin()
             ?: throw IllegalStateException("Expected origin invalid")
         val encryptedResponseData = receivedData.response.encryptedResponseData
