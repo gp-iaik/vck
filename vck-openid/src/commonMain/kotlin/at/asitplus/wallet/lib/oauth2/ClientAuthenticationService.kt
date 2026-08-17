@@ -4,8 +4,6 @@ import at.asitplus.KmmResult
 import at.asitplus.catching
 import at.asitplus.openid.OpenIdConstants
 import at.asitplus.signum.indispensable.CryptoPublicKey
-import at.asitplus.signum.indispensable.josef.JsonWebKey
-import at.asitplus.wallet.lib.oidvci.OAuth2Exception
 
 /**
  * Handles authenticating the OAuth 2.0 client for an OAuth 2.0 authorization server,
@@ -21,11 +19,14 @@ interface ClientAuthenticationService {
     /** Provide a fresh challenge for attestation PoPs. */
     suspend fun getAttestationChallenge(): String?
 
-    /** Authenticates the client by some data in the request. */
+    /**
+     * Authenticates the client by some data in the request.
+     * Return `null` when there is no claimed identity at all.
+     */
     suspend fun authenticateClient(
         httpRequest: RequestInfo?,
         clientId: String?,
-    ): KmmResult<AuthenticatedClient?>
+    ): KmmResult<ClientBinding?>
 }
 
 /** Does not verify the client authentication at all */
@@ -44,15 +45,28 @@ object NoopClientAuthenticationService : ClientAuthenticationService {
     override suspend fun authenticateClient(
         httpRequest: RequestInfo?,
         clientId: String?
-    ): KmmResult<AuthenticatedClient?> = catching {
-        null
+    ): KmmResult<ClientBinding?> = catching {
+        clientId?.let { UnauthenticatedClient(it) }
     }
+}
+
+sealed interface ClientBinding {
+    val clientId: String
 }
 
 /** Authenticated OAuth 2.0 client */
 data class AuthenticatedClient(
     /** `client_id` from the request */
-    val clientId: String,
+    override val clientId: String,
     /** The client's public key, if it presented credentials. */
     val publicKey: CryptoPublicKey?
-)
+) : ClientBinding
+
+/** Self-stated client ID, not verified in any way */
+data class UnauthenticatedClient(
+    override val clientId: String,
+) : ClientBinding
+
+fun ClientBinding.accepts(presented: ClientBinding) =
+    clientId == presented.clientId &&
+            (this is UnauthenticatedClient || this == presented)

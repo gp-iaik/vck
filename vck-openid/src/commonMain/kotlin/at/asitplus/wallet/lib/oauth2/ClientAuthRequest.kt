@@ -15,8 +15,6 @@ data class ClientAuthRequest(
     /** Validated [AuthorizationDetails] */
     val authnDetails: Collection<AuthorizationDetails>? = null,
     val codeChallenge: String? = null,
-    /** Client ID to which the auth code was issued */
-    val clientId: String? = null,
-    /** Authenticated with PAR */
-    val authenticatedClient: AuthenticatedClient? = null,
+    /** Client information, which may be authenticated from PAR or self-stated */
+    val clientBinding: ClientBinding? = null,
 )
