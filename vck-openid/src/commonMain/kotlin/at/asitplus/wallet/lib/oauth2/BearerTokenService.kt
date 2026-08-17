@@ -32,6 +32,6 @@ class BearerTokenService(
         subjectToken: String,
         httpRequest: RequestInfo?,
     ): KmmResult<ValidatedAccessToken> =
-        validateAccessToken(subjectToken, httpRequest)
+        validateAccessToken(subjectToken, httpRequest, null)
 
 }

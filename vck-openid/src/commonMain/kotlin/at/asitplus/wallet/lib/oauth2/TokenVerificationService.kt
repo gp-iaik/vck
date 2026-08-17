@@ -50,6 +50,7 @@ interface TokenVerificationService {
         tokenOrAuthHeader: String,
         httpRequest: RequestInfo?,
         dpopNonceService: NonceService? = null,
+        validatedClientKey: JsonWebKey? = null,
     ): KmmResult<ValidatedAccessToken>
 
     /** Validate a DPoP proof and extract the client's key if the proof exists at all. */
@@ -117,12 +118,19 @@ class JwtTokenVerificationService(
         tokenOrAuthHeader: String,
         httpRequest: RequestInfo?,
         dpopNonceService: NonceService?,
+        validatedClientKey: JsonWebKey?,
     ): KmmResult<ValidatedAccessToken> = catching {
         val accessToken = if (tokenOrAuthHeader.startsWith(TOKEN_TYPE_DPOP, ignoreCase = true))
             tokenOrAuthHeader.removePrefix(TOKEN_PREFIX_DPOP).split(" ").last()
         else tokenOrAuthHeader
         val tokenJwt = validateToken(accessToken, JwsContentTypeConstants.OID4VCI_AT_JWT)
-        validateDpopProof(accessToken, tokenJwt, httpRequest, dpopNonceService ?: this.dpopNonceService, null)
+        validateDpopProof(
+            accessToken = accessToken,
+            tokenJwt = tokenJwt,
+            httpRequest = httpRequest,
+            dpopNonceService = dpopNonceService ?: this.dpopNonceService,
+            validatedClientKey = validatedClientKey
+        )
         tokenJwt.payload.toValidatedAccessToken(accessToken, null)
     }
 
@@ -265,6 +273,7 @@ class BearerTokenVerificationService(
         tokenOrAuthHeader: String,
         httpRequest: RequestInfo?,
         dpopNonceService: NonceService?,
+        validatedClientKey: JsonWebKey?,
     ): KmmResult<ValidatedAccessToken> = catching {
         val token = if (tokenOrAuthHeader.startsWith(TOKEN_TYPE_BEARER, ignoreCase = true))
             tokenOrAuthHeader.removePrefix(TOKEN_PREFIX_BEARER).split(" ").last()

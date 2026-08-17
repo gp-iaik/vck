@@ -5,6 +5,7 @@ import at.asitplus.catching
 import at.asitplus.openid.OpenIdConstants.TokenTypes
 import at.asitplus.openid.TokenRequestParameters
 import at.asitplus.openid.TokenResponseParameters
+import at.asitplus.signum.indispensable.josef.JsonWebKey
 import at.asitplus.signum.indispensable.josef.JwsAlgorithm.Signature
 import at.asitplus.wallet.lib.DefaultNonceService
 import at.asitplus.wallet.lib.NonceService
@@ -34,7 +35,12 @@ interface TokenService {
     suspend fun validateAccessToken(
         authorizationHeader: String,
         httpRequest: RequestInfo?,
-    ): KmmResult<ValidatedAccessToken> = verification.validateAccessToken(authorizationHeader, httpRequest)
+        validatedClientKey: JsonWebKey?,
+    ): KmmResult<ValidatedAccessToken> = verification.validateAccessToken(
+        tokenOrAuthHeader = authorizationHeader,
+        httpRequest = httpRequest,
+        validatedClientKey = validatedClientKey
+    )
 
     /**
      * Provides information about the access token from [authorizationHeader], if it has been issued by [generation].
@@ -69,6 +75,7 @@ interface TokenService {
         request: TokenRequestParameters,
         expectedResource: String,
         httpRequest: RequestInfo?,
+        validatedClientKey: JsonWebKey?,
     ): KmmResult<TokenResponseParameters> = catching {
         Napier.i("tokenExchange: called")
         Napier.d("tokenExchange: called with $request")
@@ -82,10 +89,10 @@ interface TokenService {
         if (request.requestedTokenType != TokenTypes.ACCESS_TOKEN) {
             throw InvalidGrant("requested_token_type is not valid, must be ${TokenTypes.ACCESS_TOKEN}")
         }
-        val validatedClientKey = verification.extractValidatedClientKey(httpRequest).getOrThrow()
         val validated = validateAccessToken(
             authorizationHeader = request.subjectToken!!,
             httpRequest = httpRequest,
+            validatedClientKey = validatedClientKey,
         ).getOrThrow().apply {
             if (userInfoExtended == null)
                 throw InvalidGrant("subject_token is not valid, no stored user")

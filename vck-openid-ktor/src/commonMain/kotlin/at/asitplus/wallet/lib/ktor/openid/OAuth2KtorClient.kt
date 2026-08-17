@@ -522,15 +522,19 @@ class OAuth2KtorClient(
         url: String,
         retryCount: Int,
         action: suspend () -> T
-    ): T = (dpopNonce()
-        ?.let { updateDpopNonce(url, it) }
-        ?.takeIf { retryCount == 0 }
-        ?.let { action() })
-        ?: (attestationChallenge()
-            ?.let { updateAttestationChallenge(url, it) }
-            ?.takeIf { retryCount == 0 }
+    ): T = run {
+        updateDpopNonce(url, response.headers[HttpHeaders.DPoPNonce])
+        updateAttestationChallenge(url, response.headers[HttpHeaders.OAuthClientAttestationChallenge])
+        (dpopNonce()
+            ?.let { updateDpopNonce(url, it) }
+            ?.takeIf { retryCount <= 1 } // may need two retries: one for DPoP, one for Attestation Challenge
             ?.let { action() })
-        ?: throw this
+            ?: (attestationChallenge()
+                ?.let { updateAttestationChallenge(url, it) }
+                ?.takeIf { retryCount <= 1 } // may need two retries: one for DPoP, one for Attestation Challenge
+                ?.let { action() })
+            ?: throw this
+    }
 
     /**
      * Sets the appropriate headers when accessing [resourceUrl], by reading data from [tokenResponse],

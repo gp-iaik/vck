@@ -53,11 +53,18 @@ import kotlin.time.Duration.Companion.minutes
 
 object TestUtils {
 
-    fun MockRequestHandleScope.respondOAuth2Error(throwable: Throwable): HttpResponseData = respond(
+    /**
+     * @param dpopNonce supply a fresh DPoP nonce alongside an unrelated error, i.e. for an AS that mandates a nonce
+     * (RFC 9449 8.) on an endpoint that may reject the request for another reason first
+     */
+    fun MockRequestHandleScope.respondOAuth2Error(
+        throwable: Throwable,
+        dpopNonce: String? = null,
+    ): HttpResponseData = respond(
         joseCompliantSerializer.encodeToString(throwable.toOAuth2Error(null)),
         headers = headers {
             append(HttpHeaders.ContentType, ContentType.Application.Json.toString())
-            (throwable as? OAuth2Exception.UseDpopNonce)?.dpopNonce
+            ((throwable as? OAuth2Exception.UseDpopNonce)?.dpopNonce ?: dpopNonce)
                 ?.let { append(HttpHeaders.DPoPNonce, it) }
             (throwable as? OAuth2Exception.UseAttestationChallenge)?.attestationChallenge
                 ?.let { append(HttpHeaders.OAuthClientAttestationChallenge, it) }

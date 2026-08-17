@@ -3,6 +3,7 @@ package at.asitplus.wallet.lib.oauth2
 import at.asitplus.KmmResult
 import at.asitplus.catching
 import at.asitplus.openid.OpenIdConstants
+import at.asitplus.signum.indispensable.josef.JsonWebKey
 import at.asitplus.wallet.lib.jws.JwsContentTypeConstants
 import at.asitplus.wallet.lib.oidvci.OAuth2Exception.InvalidToken
 
@@ -23,8 +24,13 @@ class JwtTokenService(
     override suspend fun validateAccessToken(
         authorizationHeader: String,
         httpRequest: RequestInfo?,
+        validatedClientKey: JsonWebKey?,
     ): KmmResult<ValidatedAccessToken> = catching {
-        val validated = verification.validateAccessToken(authorizationHeader, httpRequest).getOrThrow()
+        val validated = verification.validateAccessToken(
+            tokenOrAuthHeader = authorizationHeader,
+            httpRequest = httpRequest,
+            validatedClientKey = validatedClientKey
+        ).getOrThrow()
         validated.jwtId
             ?.let { generation.getUserInfoExtended(it) }
             ?.let { validated.copy(userInfoExtended = it) }
@@ -53,6 +59,6 @@ class JwtTokenService(
         subjectToken: String,
         httpRequest: RequestInfo?,
     ): KmmResult<ValidatedAccessToken> =
-        validateAccessToken(subjectToken, httpRequest)
+        validateAccessToken(subjectToken, httpRequest, null)
 
 }

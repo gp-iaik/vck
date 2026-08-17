@@ -22,6 +22,7 @@ import at.asitplus.wallet.lib.jws.JwsHeaderCertOrJwk
 import at.asitplus.wallet.lib.jws.SignJwt
 import at.asitplus.wallet.lib.ktor.openid.TestUtils.respond
 import at.asitplus.wallet.lib.ktor.openid.TestUtils.respondIncludingDpopNonce
+import at.asitplus.wallet.lib.ktor.openid.TestUtils.respondOAuth2Error
 import at.asitplus.wallet.lib.ktor.openid.TestUtils.verifySdJwtCredential
 import at.asitplus.wallet.lib.oauth2.AttestationBasedClientAuthenticationService
 import at.asitplus.wallet.lib.oauth2.OAuth2Client
@@ -115,7 +116,7 @@ val OpenId4VciClientIntegratedDPoPTest by matrixSuite {
                         val authnRequest: RequestParameters = requestBody.decodeFromPostBody<RequestParameters>()
                         authorizationService.parWithDpopNonce(authnRequest, request.toRequestInfo()).fold(
                             onSuccess = { respondIncludingDpopNonce(it) },
-                            onFailure = { fail("$parEndpointPath should not return an error") }
+                            onFailure = { respondOAuth2Error(it) }
                         )
                     }
 

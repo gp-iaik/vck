@@ -4,6 +4,7 @@ import at.asitplus.KmmResult
 import at.asitplus.catching
 import at.asitplus.openid.OpenIdConstants
 import at.asitplus.signum.indispensable.CryptoPublicKey
+import at.asitplus.signum.indispensable.josef.JsonWebKey
 
 /**
  * Handles authenticating the OAuth 2.0 client for an OAuth 2.0 authorization server,
@@ -26,6 +27,7 @@ interface ClientAuthenticationService {
     suspend fun authenticateClient(
         httpRequest: RequestInfo?,
         clientId: String?,
+        validatedClientKey: JsonWebKey?,
     ): KmmResult<ClientBinding?>
 }
 
@@ -44,7 +46,8 @@ object NoopClientAuthenticationService : ClientAuthenticationService {
 
     override suspend fun authenticateClient(
         httpRequest: RequestInfo?,
-        clientId: String?
+        clientId: String?,
+        validatedClientKey: JsonWebKey?,
     ): KmmResult<ClientBinding?> = catching {
         clientId?.let { UnauthenticatedClient(it) }
     }

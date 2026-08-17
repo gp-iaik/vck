@@ -8,6 +8,7 @@ import at.asitplus.openid.OpenIdConstants.WellKnownPaths
 import at.asitplus.openid.TokenIntrospectionJwtResponse
 import at.asitplus.openid.TokenIntrospectionResponse
 import at.asitplus.openid.TokenResponseParameters
+import at.asitplus.signum.indispensable.josef.JsonWebKey
 import at.asitplus.signum.indispensable.josef.io.joseCompliantSerializer
 import at.asitplus.testballoon.matrix.matrixSuite
 import at.asitplus.wallet.lib.NonceService
@@ -61,6 +62,7 @@ val RemoteOAuth2AuthorizationServerAdapterTest by matrixSuite {
             tokenOrAuthHeader: String,
             httpRequest: RequestInfo?,
             dpopNonceService: NonceService?,
+            validatedClientKey: JsonWebKey?,
         ): KmmResult<ValidatedAccessToken> =
             catching { ValidatedAccessToken(token = tokenOrAuthHeader) }
 

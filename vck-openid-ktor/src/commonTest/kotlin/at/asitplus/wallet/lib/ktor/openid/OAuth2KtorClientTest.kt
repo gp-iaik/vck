@@ -118,7 +118,12 @@ val OAuth2KtorClientTest by matrixSuite {
                         val challenge = authorizationService.attestationChallenge().getOrThrow().shouldNotBeNull()
                             .attestationChallenge
                             .also { issuedAttestationChallenges += it }
-                        return@MockEngine respondOAuth2Error(OAuth2Exception.UseAttestationChallenge(challenge))
+                        // PAR mandates a fresh DPoP nonce, and the client retries only once, so an AS rejecting the
+                        // request for a missing attestation challenge must supply the nonce in the same response.
+                        return@MockEngine respondOAuth2Error(
+                            OAuth2Exception.UseAttestationChallenge(challenge),
+                            dpopNonce = authorizationService.getDpopNonce(),
+                        )
                     }
                     val requestBody = request.body.toByteArray().decodeToString()
                     val authnRequest: RequestParameters = requestBody.decodeFromPostBody()
@@ -345,7 +350,28 @@ val OAuth2KtorClientTest by matrixSuite {
                 scope = requestedScope,
             ).getOrThrow()
 
-            receivedPopChallenges.single() shouldBe issuedAttestationChallenges.single()
+            // PAR mandates a fresh DPoP nonce, which the client can only learn from the rejected first attempt,
+            // so two PARs are sent, each carrying a freshly fetched challenge in its PoP.
+            receivedPopChallenges.size shouldBe 2
+            receivedPopChallenges shouldBe issuedAttestationChallenges
+        }
+    }
+
+    test("retries PAR with the DPoP nonce from the error response") {
+        with(setup(strategy, setOf(JwsAlgorithm.Signature.ES256), requirePAR = true)) {
+            client.startAuthorization(
+                oauthMetadata = authorizationService.metadata(),
+                authorizationServer = authorizationService.publicContext,
+                scope = requestedScope,
+            ).getOrThrow()
+
+            // The AS mandates a nonce at PAR (RFC 9449 8.), and the client has none for the first request
+            val parDpopNonces = mockEngine.requestHistory
+                .filter { it.url.fullPath.startsWith("/par") }
+                .map { it.toRequestInfo().dpop.shouldNotBeNull().payload.nonce }
+            parDpopNonces.size shouldBe 2
+            parDpopNonces.first() shouldBe null
+            parDpopNonces.last().shouldNotBeNull()
         }
     }
 

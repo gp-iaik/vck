@@ -141,7 +141,8 @@ class RemoteOAuth2AuthorizationServerAdapter(
         internalTokenVerificationService.validateAccessToken(
             tokenOrAuthHeader = authorizationHeader,
             httpRequest = httpRequest,
-            dpopNonceService = dpopNonceService
+            dpopNonceService = dpopNonceService,
+            validatedClientKey = null,
         ).getOrThrow()
     }
 

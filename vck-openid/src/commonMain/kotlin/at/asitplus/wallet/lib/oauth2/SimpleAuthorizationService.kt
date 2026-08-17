@@ -317,8 +317,12 @@ class SimpleAuthorizationService @JvmOverloads constructor(
     ) = catching {
         val actualRequest = request.extractPushedRequestParams()
         Napier.i("par called with $actualRequest")
-        val client = clientAuthenticationService
-            .authenticateClient(httpRequest, actualRequest.clientId).getOrThrow()
+        val validatedClientKey = httpRequest?.validatedClientKey()
+        val presentedClient = clientAuthenticationService.authenticateClient(
+            httpRequest = httpRequest,
+            clientId = actualRequest.clientId,
+            validatedClientKey = validatedClientKey
+        ).getOrThrow()
             ?: throw InvalidRequest("client could not be authenticated")
         // PAR stores the request for later authorization. issuer_state is single-use and must only be consumed
         // when /authorize is executed with the referenced request_uri.
@@ -326,7 +330,7 @@ class SimpleAuthorizationService @JvmOverloads constructor(
         val requestUri = "urn:ietf:params:oauth:request_uri:${uuid4()}".also {
             requestUriToPushedAuthorizationRequest.put(
                 it,
-                PushedAuthorizationRequest(actualRequest, client)
+                PushedAuthorizationRequest(actualRequest, presentedClient)
             )
         }
         PushedAuthenticationResponseParameters(
@@ -492,17 +496,24 @@ class SimpleAuthorizationService @JvmOverloads constructor(
         httpRequest: RequestInfo?,
     ): KmmResult<TokenResponseParameters> = catching {
         Napier.i("token called with $request")
-        val presentedClient = clientAuthenticationService
-            .authenticateClient(httpRequest, request.clientId).getOrThrow()
+        val validatedClientKey = httpRequest?.validatedClientKey()
+        val presentedClient = clientAuthenticationService.authenticateClient(
+            httpRequest = httpRequest,
+            clientId = request.clientId,
+            validatedClientKey = validatedClientKey
+        ).getOrThrow()
             ?: throw InvalidGrant("client_id not set")
 
         if (request.grantType == OpenIdConstants.GRANT_TYPE_TOKEN_EXCHANGE) {
             val userInfoEndpoint = metadata().userInfoEndpoint
                 ?: throw InvalidGrant("token_exchange requires userInfoEndpoint")
-            return@catching tokenService.tokenExchange(request, userInfoEndpoint, httpRequest).getOrThrow()
+            return@catching tokenService.tokenExchange(
+                request = request,
+                expectedResource = userInfoEndpoint,
+                httpRequest = httpRequest,
+                validatedClientKey = validatedClientKey
+            ).getOrThrow()
         }
-        // TODO For dpop combined mode fold into authenticateClient
-        val validatedClientKey = tokenService.verification.extractValidatedClientKey(httpRequest).getOrThrow()
 
         val clientAuthRequest = request.loadClientAuthnRequest(httpRequest, validatedClientKey)
             ?: throw InvalidGrant("could not load user info for $request")
@@ -655,7 +666,11 @@ class SimpleAuthorizationService @JvmOverloads constructor(
         httpRequest: RequestInfo?,
     ): KmmResult<JsonObject> = catching {
         // The user info comes out of the validation itself, so it must not be looked up a second time
-        tokenService.validateAccessToken(authorizationHeader, httpRequest).getOrThrow()
+        tokenService.validateAccessToken(
+            authorizationHeader = authorizationHeader,
+            httpRequest = httpRequest,
+            validatedClientKey = null,
+        ).getOrThrow()
             .userInfoExtended?.jsonObject
             ?: throw InvalidGrant("no user info found for $authorizationHeader")
     }
@@ -697,7 +712,12 @@ class SimpleAuthorizationService @JvmOverloads constructor(
         request: TokenIntrospectionRequest,
         httpRequest: RequestInfo?,
     ): KmmResult<TokenIntrospectionResult> = catching {
-        clientAuthenticationService.authenticateClient(httpRequest, null).getOrThrow()
+        val validatedClientKey = httpRequest?.validatedClientKey()
+        clientAuthenticationService.authenticateClient(
+            httpRequest = httpRequest,
+            clientId = null,
+            validatedClientKey = validatedClientKey
+        ).getOrThrow()
         val response = catchingUnwrapped {
             tokenService.verification.getTokenInfo(request.token)
         }.fold(
@@ -728,10 +748,16 @@ class SimpleAuthorizationService @JvmOverloads constructor(
     override suspend fun validateAccessToken(
         authorizationHeader: String,
         httpRequest: RequestInfo?,
-    ): KmmResult<ValidatedAccessToken> =
-        tokenService.validateAccessToken(authorizationHeader, httpRequest)
+    ): KmmResult<ValidatedAccessToken> = tokenService.validateAccessToken(
+        authorizationHeader = authorizationHeader,
+        httpRequest = httpRequest,
+        validatedClientKey = null,
+    )
 
     override suspend fun getDpopNonce() = tokenService.dpopNonce()
+
+    private suspend fun RequestInfo?.validatedClientKey(): JsonWebKey? =
+        this?.dpop?.let { tokenService.verification.extractValidatedClientKey(this).getOrThrow() }
 }
 
 data class ResponseWithDpopNonce<T>(

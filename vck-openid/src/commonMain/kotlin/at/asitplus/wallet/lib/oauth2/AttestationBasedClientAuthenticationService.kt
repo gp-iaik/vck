@@ -6,6 +6,7 @@ import at.asitplus.openid.OAuth2AuthorizationServerMetadata
 import at.asitplus.openid.OpenIdConstants
 import at.asitplus.openid.OpenIdConstants.AUTH_METHOD_ATTEST_JWT_CLIENT_AUTH
 import at.asitplus.signum.indispensable.CryptoPublicKey
+import at.asitplus.signum.indispensable.josef.JsonWebKey
 import at.asitplus.signum.indispensable.josef.JsonWebToken
 import at.asitplus.signum.indispensable.josef.JwsAlgorithm
 import at.asitplus.signum.indispensable.josef.JwsCompactTyped
@@ -75,6 +76,7 @@ class AttestationBasedClientAuthenticationService @JvmOverloads constructor(
     override suspend fun authenticateClient(
         httpRequest: RequestInfo?,
         clientId: String?,
+        validatedClientKey: JsonWebKey?,
     ): KmmResult<AuthenticatedClient> = catching {
         val instanceAttestation = httpRequest?.clientAttestation
             ?: throw InvalidClient("client attestation header missing")
@@ -94,6 +96,7 @@ class AttestationBasedClientAuthenticationService @JvmOverloads constructor(
             throw InvalidClient("client attestation PoP JWT not verified")
         }
 
+        // TODO use validatedClientKey
         instanceAttestationPopJwt.validateWalletInstanceAttestationPop(instanceAttestation.payload.subject)
         AuthenticatedClient(
             clientId = instanceAttestation.payload.subject
