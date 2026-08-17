@@ -38,8 +38,6 @@ import io.ktor.http.*
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.jvm.JvmOverloads
 import kotlin.time.Clock
-import kotlin.time.DurationUnit
-import kotlin.time.toDuration
 
 /**
  * Combines Verifiable Presentations with OAuth 2.0.
@@ -69,8 +67,8 @@ class OpenId4VpVerifier @JvmOverloads constructor(
     private val supportedAlgorithms: Set<SignatureAlgorithm> = setOf(SignatureAlgorithm.ECDSAwithSHA256),
     /** Used to verify session transcripts from mDoc responses. */
     private val verifyCoseSignature: VerifyCoseSignatureWithKeyFun<ByteArray> = VerifyCoseSignatureWithKey(),
-    /** Leeway for time validity checks. */
-    timeLeewaySeconds: Long = 300L,
+    @Deprecated("Support for SIOPv2 has been removed")
+    private val timeLeewaySeconds: Long = 300L,
     @Deprecated("Support for SIOPv2 has been removed")
     private val clock: Clock = Clock.System,
     /** Creates and validates OpenID4VP request nonces. */
@@ -101,7 +99,6 @@ class OpenId4VpVerifier @JvmOverloads constructor(
         decryptionKeyMaterial = decryptionKeyMaterial
     )
     private val responseParser = ResponseParser(decryptJwe, verifyJwsObject)
-    private val timeLeeway = timeLeewaySeconds.toDuration(DurationUnit.SECONDS)
 
     /**
      * Creates the [at.asitplus.openid.RelyingPartyMetadata], without encryption (see [metadataWithEncryption])
