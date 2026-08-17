@@ -499,7 +499,7 @@ class SimpleAuthorizationService @JvmOverloads constructor(
         if (request.grantType == OpenIdConstants.GRANT_TYPE_TOKEN_EXCHANGE) {
             val userInfoEndpoint = metadata().userInfoEndpoint
                 ?: throw InvalidGrant("token_exchange requires userInfoEndpoint")
-            return@catching tokenService.tokenExchange(request, userInfoEndpoint, httpRequest)
+            return@catching tokenService.tokenExchange(request, userInfoEndpoint, httpRequest).getOrThrow()
         }
         // TODO For dpop combined mode fold into authenticateClient
         val validatedClientKey = tokenService.verification.extractValidatedClientKey(httpRequest).getOrThrow()

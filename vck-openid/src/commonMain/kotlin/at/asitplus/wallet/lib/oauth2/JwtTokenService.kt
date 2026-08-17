@@ -31,10 +31,6 @@ class JwtTokenService(
             ?: validated
     }
 
-    /**
-     * Provides information about the access token from [authorizationHeader], if it has been issued by [generation].
-     * **Access token needs to be validated before (see [TokenVerificationService.validateAccessToken])**
-     */
     @Suppress("OVERRIDE_DEPRECATION")
     override suspend fun readUserInfo(
         authorizationHeader: String,
@@ -52,21 +48,11 @@ class JwtTokenService(
         throw InvalidToken("authorization header not valid: $authorizationHeader")
     }
 
-    /**
-     * Validates the subject token (that is a token sent by a third party) for token exchange) is one issued from
-     * [generation], and that the client presented a valid proof-of-possession for the key the token is bound to.
-     * Callers need to authenticate the client before calling this method.
-     */
+    @Suppress("OVERRIDE_DEPRECATION")
     override suspend fun validateTokenForTokenExchange(
         subjectToken: String,
-    ): ValidatedAccessToken = run {
-        val tokenJwt = verification.validateToken(subjectToken, JwsContentTypeConstants.OID4VCI_AT_JWT)
-        val jwtId = tokenJwt.payload.jwtId
-            ?: throw InvalidToken("access token not valid: $subjectToken")
-        // can't validate DPoP JWT, as the third party can't forward this
-        with(tokenJwt.payload) {
-            toValidatedAccessToken(subjectToken, generation.getUserInfoExtended(jwtId))
-        }
-    }
+        httpRequest: RequestInfo?,
+    ): KmmResult<ValidatedAccessToken> =
+        validateAccessToken(subjectToken, httpRequest)
 
 }

@@ -1,6 +1,7 @@
 package at.asitplus.wallet.lib.oauth2
 
 import at.asitplus.KmmResult
+import at.asitplus.catching
 import at.asitplus.openid.OpenIdConstants.TokenTypes
 import at.asitplus.openid.TokenRequestParameters
 import at.asitplus.openid.TokenResponseParameters
@@ -50,13 +51,14 @@ interface TokenService {
         request: RequestInfo?,
     ): ValidatedAccessToken
 
-    /**
-     * Validates the subject token (that is a token sent by a third party) for token exchange) is one issued from
-     * [TokenGenerationService]. Callers need to authenticate the client before calling this method.
-     */
+    @Deprecated(
+        "Use validateAccessToken instead, which validates the token, including the DPoP proof",
+        ReplaceWith("validateAccessToken(subjectToken, httpRequest)")
+    )
     suspend fun validateTokenForTokenExchange(
         subjectToken: String,
-    ): ValidatedAccessToken
+        httpRequest: RequestInfo?,
+    ): KmmResult<ValidatedAccessToken>
 
     /**
      * [OAuth 2.0 Token Exchange](https://datatracker.ietf.org/doc/html/rfc8693):
@@ -67,7 +69,7 @@ interface TokenService {
         request: TokenRequestParameters,
         expectedResource: String,
         httpRequest: RequestInfo?,
-    ): TokenResponseParameters {
+    ): KmmResult<TokenResponseParameters> = catching {
         Napier.i("tokenExchange: called")
         Napier.d("tokenExchange: called with $request")
         // Client wants to exchange Wallet's access token (probably DPoP-constrained) with a fresh one for userInfo
@@ -81,19 +83,23 @@ interface TokenService {
             throw InvalidGrant("requested_token_type is not valid, must be ${TokenTypes.ACCESS_TOKEN}")
         }
         val validatedClientKey = verification.extractValidatedClientKey(httpRequest).getOrThrow()
-        val validated = validateTokenForTokenExchange(
-            subjectToken = request.subjectToken!!,
-        ).apply {
+        val validated = validateAccessToken(
+            authorizationHeader = request.subjectToken!!,
+            httpRequest = httpRequest,
+        ).getOrThrow().apply {
             if (userInfoExtended == null)
                 throw InvalidGrant("subject_token is not valid, no stored user")
         }
-        return generation.buildToken(
+        generation.buildToken(
             userInfo = validated.userInfoExtended!!,
             httpRequest = httpRequest,
             authorizationDetails = validated.authorizationDetails,
             scope = validated.scope,
             validatedClientKey = validatedClientKey,
-        ).also { Napier.i("tokenExchange returns"); Napier.d("tokenExchange returns $it") }
+        ).also {
+            Napier.i("tokenExchange returns")
+            Napier.d("tokenExchange returns $it")
+        }
     }
 
     suspend fun dpopNonce() = generation.dpopNonce()

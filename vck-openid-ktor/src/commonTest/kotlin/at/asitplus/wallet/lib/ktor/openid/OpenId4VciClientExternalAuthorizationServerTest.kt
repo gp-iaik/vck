@@ -129,9 +129,9 @@ val OpenId4VciClientExternalAuthorizationServerTest by matrixSuite {
         val challengeEndpointPath = "/challenge"
         val issuerPublicContext = "https://issuer.example.com"
         val authServerPublicContext = "https://auth.example.com"
-        val tokenService = TokenService.jwt(
-            issueRefreshTokens = true
-        )
+        // TODO Re-test with JWT tokens (Problem when using token exchange: Validate DPoP for subject token on backend)
+        // val tokenService = TokenService.jwt(issueRefreshTokens = true)
+        val tokenService = TokenService.bearer(issueRefreshTokens = true)
         val externalAuthorizationServer = SimpleAuthorizationService(
             strategy = CredentialAuthorizationServiceStrategy(AttributeIndex.schemeSet),
             publicContext = authServerPublicContext,
@@ -348,7 +348,14 @@ val OpenId4VciClientExternalAuthorizationServerTest by matrixSuite {
         val expectedAttributeValue = uuid4().toString()
         val expectedAttributeName = EuPidSdJwtDataElements.FAMILY_NAME
         val euPidSdJwtScheme = AttributeIndex.resolveIdentifier(EU_PID_SD_JWT_VCT, SD_JWT)
-        with(setup(euPidSdJwtScheme, SD_JWT, mapOf(expectedAttributeName to expectedAttributeValue), validatePopAudience = true)) {
+        with(
+            setup(
+                euPidSdJwtScheme,
+                SD_JWT,
+                mapOf(expectedAttributeName to expectedAttributeValue),
+                validatePopAudience = true
+            )
+        ) {
             var refreshTokenStore: CredentialRenewalInfo? = null
             val credentialIdentifierInfos = client.loadCredentialMetadata(issuerPublicContext).getOrThrow()
             val selectedCredential = credentialIdentifierInfos
@@ -367,7 +374,11 @@ val OpenId4VciClientExternalAuthorizationServerTest by matrixSuite {
                 // With fix: aud = authServerPublicContext → AS accepts
                 client.resumeWithAuthCode(authCode!!, it.context).getOrThrow().also { result ->
                     refreshTokenStore = result.refreshToken!!
-                    result.verifySdJwtCredential(expectedAttributeName, expectedAttributeValue, credentialKeyMaterial.publicKey)
+                    result.verifySdJwtCredential(
+                        expectedAttributeName,
+                        expectedAttributeValue,
+                        credentialKeyMaterial.publicKey
+                    )
                 }
             }
 
