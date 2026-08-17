@@ -29,6 +29,7 @@ import at.asitplus.wallet.lib.oidvci.encodeToParameters
 import at.asitplus.wallet.lib.oidvci.formUrlEncode
 import at.asitplus.wallet.lib.openid.DummyCredentialDataProvider.issueAndStorePlainJwt
 import com.benasher44.uuid.uuid4
+import io.kotest.matchers.shouldBe
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.types.shouldBeInstanceOf
@@ -48,7 +49,7 @@ val OpenId4VpRelyingPartyTrustTest by matrixSuite {
         presentTo(
             relyingParty = relyingParty,
             clientIdScheme = sanDnsScheme(relyingParty),
-            trust = RelyingPartyTrust(certificates = { setOf(ca.certificate()) }),
+            trust = setOf(RelyingPartyTrust.Certificates { setOf(ca.certificate()) }),
         ).getOrThrow()
     }
 
@@ -59,7 +60,7 @@ val OpenId4VpRelyingPartyTrustTest by matrixSuite {
         presentTo(
             relyingParty = relyingParty,
             clientIdScheme = sanDnsScheme(relyingParty),
-            trust = RelyingPartyTrust(certificates = { setOf(TestCertificateAuthority().certificate()) }),
+            trust = setOf(RelyingPartyTrust.Certificates { setOf(TestCertificateAuthority().certificate()) }),
         ).exceptionOrNull().shouldNotBeNull()
             .message.shouldNotBeNull() shouldContain "trust anchor"
     }
@@ -72,7 +73,7 @@ val OpenId4VpRelyingPartyTrustTest by matrixSuite {
         presentTo(
             relyingParty = impostor,
             clientIdScheme = sanDnsScheme(impostor),
-            trust = RelyingPartyTrust(certificates = { setOf(TestCertificateAuthority().certificate()) }),
+            trust = setOf(RelyingPartyTrust.Certificates { setOf(TestCertificateAuthority().certificate()) }),
         ).exceptionOrNull().shouldNotBeNull()
             .message.shouldNotBeNull() shouldContain "self-signed"
     }
@@ -83,12 +84,12 @@ val OpenId4VpRelyingPartyTrustTest by matrixSuite {
         val chain = listOf(relyingParty.getCertificate()!!)
         val scheme = ClientIdScheme.CertificateHash(chain, REDIRECT_URI)
 
-        presentTo(relyingParty, scheme, RelyingPartyTrust(certificates = { setOf(ca.certificate()) }))
+        presentTo(relyingParty, scheme, setOf(RelyingPartyTrust.Certificates { setOf(ca.certificate()) }))
             .getOrThrow()
 
         presentTo(
             relyingParty, scheme,
-            RelyingPartyTrust(certificates = { setOf(TestCertificateAuthority().certificate()) }),
+            setOf(RelyingPartyTrust.Certificates { setOf(TestCertificateAuthority().certificate()) }),
         ).exceptionOrNull().shouldNotBeNull()
             .message.shouldNotBeNull() shouldContain "trust anchor"
     }
@@ -104,12 +105,12 @@ val OpenId4VpRelyingPartyTrustTest by matrixSuite {
 
         presentTo(
             relyingParty, scheme,
-            RelyingPartyTrust(verifierAttesterKeys = { setOf(attester.jsonWebKey) }),
+            setOf(RelyingPartyTrust.VerifierAttesterKeys { setOf(attester.jsonWebKey) }),
         ).getOrThrow()
 
         presentTo(
             relyingParty, scheme,
-            RelyingPartyTrust(verifierAttesterKeys = { setOf(EphemeralKeyWithoutCert().jsonWebKey) }),
+            setOf(RelyingPartyTrust.VerifierAttesterKeys { setOf(EphemeralKeyWithoutCert().jsonWebKey) }),
         ).exceptionOrNull().shouldNotBeNull()
             .message.shouldNotBeNull() shouldContain "not issued by a trusted party"
     }
@@ -127,7 +128,7 @@ val OpenId4VpRelyingPartyTrustTest by matrixSuite {
 
         presentTo(
             impostor, scheme,
-            RelyingPartyTrust(verifierAttesterKeys = { setOf(attester.jsonWebKey) }),
+            setOf(RelyingPartyTrust.VerifierAttesterKeys { setOf(attester.jsonWebKey) }),
         ).exceptionOrNull().shouldNotBeNull()
             .message.shouldNotBeNull() shouldContain "signature not verified"
     }
@@ -139,12 +140,12 @@ val OpenId4VpRelyingPartyTrustTest by matrixSuite {
 
         presentTo(
             relyingParty, scheme,
-            RelyingPartyTrust(preRegisteredClients = { if (it == clientId) setOf(relyingParty.jsonWebKey) else null }),
+            setOf(RelyingPartyTrust.PreRegisteredClients { if (it == clientId) setOf(relyingParty.jsonWebKey) else null }),
         ).getOrThrow()
 
         presentTo(
             relyingParty, scheme,
-            RelyingPartyTrust(preRegisteredClients = { null }),
+            setOf(RelyingPartyTrust.PreRegisteredClients { null }),
         ).exceptionOrNull().shouldNotBeNull()
             .message.shouldNotBeNull() shouldContain "not a pre-registered relying party"
     }
@@ -153,25 +154,57 @@ val OpenId4VpRelyingPartyTrustTest by matrixSuite {
     // ClientIdScheme models no such scheme either, so the request is hand-built rather than made by a verifier
     "a scheme this library does not evaluate is handed to the custom hook" {
         var seen: String? = null
-        validate(ENTITY_ID_CLIENT_ID, RelyingPartyTrust(custom = { seen = it.parameters.clientId }))
+        validate(ENTITY_ID_CLIENT_ID, setOf(RelyingPartyTrust.Custom { seen = it.parameters.clientId }))
         seen.shouldNotBeNull() shouldContain "rp.example.com"
 
         validate(
             ENTITY_ID_CLIENT_ID,
-            RelyingPartyTrust(custom = { throw IllegalArgumentException("federation trust chain not established") }),
+            setOf(RelyingPartyTrust.Custom { throw IllegalArgumentException("federation trust chain not established") }),
         ).exceptionOrNull().shouldNotBeNull()
             .message.shouldNotBeNull() shouldContain "federation trust chain"
     }
 
-    "a scheme this library does not evaluate passes when no custom hook is configured" {
-        validate(ENTITY_ID_CLIENT_ID, RelyingPartyTrust(certificates = { setOf() })).getOrThrow()
+    // Otherwise a relying party bypasses the configured trust anchors just by naming itself with a scheme this
+    // library does not evaluate, so `entity_id` without a custom hook must not be more permissive than `x509_hash`
+    "a scheme this library does not evaluate is rejected when no custom hook is configured" {
+        validate(ENTITY_ID_CLIENT_ID, setOf(RelyingPartyTrust.Certificates { setOf() }))
+            .exceptionOrNull().shouldNotBeNull()
+            .message.shouldNotBeNull() shouldContain "no custom trust source for client identifier scheme entity_id"
+    }
+
+    "a scheme this library does not evaluate passes when trust is not evaluated at all" {
+        validate(ENTITY_ID_CLIENT_ID, trust = null).getOrThrow()
+    }
+
+    // The point of passing a set: several sources of the same kind are a union, e.g. a trust list next to a
+    // locally pinned CA, so trust established by any one of them is enough. Sources after the one that
+    // establishes trust are not consulted, they may fetch a trust list or hit a database
+    "a relying party trusted by one of several configured sources of the same kind is accepted" {
+        val ca = TestCertificateAuthority()
+        val relyingParty = ca.issue(extensions = subjectAltNameDns(CLIENT_ID_DNS))
+        var consultedAfterTrustEstablished = false
+
+        presentTo(
+            relyingParty = relyingParty,
+            clientIdScheme = sanDnsScheme(relyingParty),
+            trust = setOf(
+                RelyingPartyTrust.Certificates { setOf(TestCertificateAuthority().certificate()) },
+                RelyingPartyTrust.Certificates { setOf(ca.certificate()) },
+                RelyingPartyTrust.Certificates {
+                    consultedAfterTrustEstablished = true
+                    setOf()
+                },
+            ),
+        ).getOrThrow()
+
+        consultedAfterTrustEstablished shouldBe false
     }
 
     "a scheme without configured trust material is rejected" {
         val relyingParty = EphemeralKeyWithoutCert()
         val scheme = ClientIdScheme.PreRegistered("some-${uuid4()}", REDIRECT_URI)
 
-        presentTo(relyingParty, scheme, RelyingPartyTrust(certificates = { setOf() }))
+        presentTo(relyingParty, scheme, setOf(RelyingPartyTrust.Certificates { setOf() }))
             .exceptionOrNull().shouldNotBeNull()
             .message.shouldNotBeNull() shouldContain "no pre-registered relying parties configured"
     }
@@ -182,7 +215,7 @@ private const val REDIRECT_URI = "https://example.com/rp"
 private const val ENTITY_ID_CLIENT_ID = "entity_id:https://rp.example.com"
 
 /** Runs an unsigned authorization request naming [clientId] through the wallet's request validation. */
-private suspend fun validate(clientId: String, trust: RelyingPartyTrust) = runCatchingToResult {
+private suspend fun validate(clientId: String, trust: Set<RelyingPartyTrust>?) = runCatchingToResult {
     val request = AuthenticationRequestParameters(
         responseType = OpenIdConstants.VP_TOKEN,
         clientId = clientId,
@@ -236,7 +269,7 @@ private suspend fun attestationJwt(
 private suspend fun presentTo(
     relyingParty: KeyMaterial,
     clientIdScheme: ClientIdScheme,
-    trust: RelyingPartyTrust,
+    trust: Set<RelyingPartyTrust>,
 ) = runCatchingToResult {
     val verifierOid4vp = OpenId4VpVerifier(
         keyMaterial = relyingParty,

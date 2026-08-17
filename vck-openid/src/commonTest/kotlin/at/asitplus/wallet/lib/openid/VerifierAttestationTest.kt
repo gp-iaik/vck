@@ -71,8 +71,8 @@ val VerifierAttestationTest by matrixSuite {
 
             val holderOid4vp = OpenId4VpHolder(
                 holder = it.holderAgent,
-                relyingPartyTrust = RelyingPartyTrust(
-                    verifierAttesterKeys = { setOf(sprsKeyMaterial.jsonWebKey) },
+                relyingPartyTrust = setOf(
+                    RelyingPartyTrust.VerifierAttesterKeys { setOf(sprsKeyMaterial.jsonWebKey) },
                 ),
                 randomSource = RandomSource.Default,
             )

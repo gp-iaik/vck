@@ -1,6 +1,7 @@
 package at.asitplus.wallet.lib.openid
 
 import at.asitplus.catching
+import at.asitplus.catchingUnwrapped
 import at.asitplus.iso.sha256
 import at.asitplus.openid.AuthenticationRequestParameters
 import at.asitplus.openid.OpenIdConstants
@@ -34,7 +35,7 @@ internal class AuthorizationRequestValidator(
     private val walletNonceMapStore: MapStore<String, String> = DefaultMapStore(),
     private val allowedDcApiOriginSchemes: suspend () -> Set<String>,
     /** How to establish trust in the relying party, see [RelyingPartyTrust]. Trust is not evaluated when null. */
-    private val relyingPartyTrust: RelyingPartyTrust? = null,
+    private val relyingPartyTrust: Set<RelyingPartyTrust>? = null,
     private val verifySignature: VerifySignatureFun = VerifySignature(),
     private val verifyJwsSignature: VerifyJwsSignatureFun = VerifyJwsSignature(verifySignature),
 ) {
@@ -62,8 +63,11 @@ internal class AuthorizationRequestValidator(
             clientIdScheme is ClientIdScheme.PreRegistered -> request.verifyClientIdSchemePreRegistered()
             // No client_id at all, e.g. an unsigned DC API request authenticated by its calling origin
             clientIdScheme == null -> Unit
-            // `entity_id`, `did` and anything unrecognised, which we cannot evaluate ourselves
-            else -> relyingPartyTrust?.custom?.invoke(request)
+            // `entity_id`, `did` and anything unrecognised, which we cannot evaluate ourselves, so a custom
+            // source is the only way to establish trust and the request is rejected without one
+            else -> relyingPartyTrust?.requireTrustedBy<RelyingPartyTrust.Custom>(
+                configured = "custom trust source for client identifier scheme ${clientIdScheme.stringRepresentation}"
+            ) { it.evaluate(request) }
         }
         if (request.isFromRequestObject()) {
             request.parameters.walletNonce?.let {
@@ -113,20 +117,23 @@ internal class AuthorizationRequestValidator(
         val attestation = (signedRequest.jwsTyped.jws as? JwsCompact)?.jwsHeader?.attestationJwt
             ?: throw InvalidRequest("verifier_attestation client_id_scheme requires a jwt in the JOSE header")
 
-        relyingPartyTrust?.let { trust ->
-            val verifyAttestation = if (attestation.jwsHeader.certificateChain != null) {
+        val attesterNotTrusted = "verifier attestation not issued by a trusted party"
+        if (attestation.jwsHeader.certificateChain != null) {
+            relyingPartyTrust?.requireTrustedBy<RelyingPartyTrust.VerifierAttesterCertificates>(
+                configured = "trusted verifier attester certificates",
+                rejected = attesterNotTrusted,
+            ) { source ->
                 VerifyJwsObjectTrustedCertificate(
                     verifyJwsSignature = verifyJwsSignature,
-                    trustedIssuers = trust.verifierAttesterCertificates
-                        ?: throw InvalidRequest("no trusted verifier attester certificates configured"),
-                )
-            } else {
-                val trustedKeys = trust.verifierAttesterKeys
-                    ?: throw InvalidRequest("no trusted verifier attester keys configured")
-                VerifyJwsObjectTrusted(verifyJwsSignature) { trustedKeys() }
+                    trustedIssuers = source.certificates,
+                )(attestation).getOrThrow()
             }
-            verifyAttestation(attestation).getOrElse {
-                throw InvalidRequest("verifier attestation not issued by a trusted party", it)
+        } else {
+            relyingPartyTrust?.requireTrustedBy<RelyingPartyTrust.VerifierAttesterKeys>(
+                configured = "trusted verifier attester keys",
+                rejected = attesterNotTrusted,
+            ) { source ->
+                VerifyJwsObjectTrusted(verifyJwsSignature) { source.keys() }(attestation).getOrThrow()
             }
         }
 
@@ -143,9 +150,9 @@ internal class AuthorizationRequestValidator(
     }
 
     /**
-     * The Client Identifier needs to be known to the wallet in advance, so it is looked up in
-     * [RelyingPartyTrust.preRegisteredClients], and a signed request has to be signed by one of the keys registered
-     * for it.
+     * The Client Identifier needs to be known to the wallet in advance, so it is looked up in every configured
+     * [RelyingPartyTrust.PreRegisteredClients], and a signed request has to be signed by one of the keys
+     * registered for it.
      */
     private suspend fun RequestParametersFrom<AuthenticationRequestParameters>.verifyClientIdSchemePreRegistered() {
         val trust = relyingPartyTrust ?: return
@@ -154,18 +161,21 @@ internal class AuthorizationRequestValidator(
         if (this is RequestParametersFrom.OpenId4VpDcApiUnsigned) return
         val clientId = parameters.clientIdWithoutPrefix
             ?: throw InvalidRequest("client_id is null")
-        val lookup = trust.preRegisteredClients
-            ?: throw InvalidRequest("no pre-registered relying parties configured")
-        val registeredKeys = lookup(clientId)?.takeIf { it.isNotEmpty() }
-            ?: throw InvalidRequest("client_id $clientId is not a pre-registered relying party")
-
         val signedRequest = this as? RequestParametersFrom.RequestParametersSigned<AuthenticationRequestParameters>
-            ?: return // an unsigned request from a known client identifier, nothing to verify against
-        if (registeredKeys.none { key ->
-                key.toCryptoPublicKey().getOrNull()
-                    ?.let { catching { signedRequest.verifyRequestObjectSignature(it) }.isSuccess } == true
-            }) {
-            throw InvalidRequest("Request object not signed by a key registered for $clientId")
+
+        trust.requireTrustedBy<RelyingPartyTrust.PreRegisteredClients>(
+            configured = "pre-registered relying parties",
+            rejected = "client_id $clientId is not a pre-registered relying party",
+        ) { source ->
+            val registeredKeys = source.lookup(clientId)?.takeIf { it.isNotEmpty() }
+                ?: throw IllegalArgumentException("client_id unknown to this source")
+            // an unsigned request from a known client identifier, nothing to verify against
+            if (signedRequest != null && registeredKeys.none { key ->
+                    key.toCryptoPublicKey().getOrNull()
+                        ?.let { catching { signedRequest.verifyRequestObjectSignature(it) }.isSuccess } == true
+                }) {
+                throw IllegalArgumentException("request object not signed by a key registered for this client_id")
+            }
         }
     }
 
@@ -251,10 +261,8 @@ internal class AuthorizationRequestValidator(
         }
         // The checks above only bind the client_id to the certificate, anyone may mint a certificate carrying a
         // foreign DNS name, so the chain has to lead to a trust anchor known out-of-band
-        relyingPartyTrust?.let { trust ->
-            val trustedRelyingParties = trust.certificates
-                ?: throw InvalidRequest("no trusted relying party certificates configured")
-            certChain.requireTrustedSigningCertificate(trustedRelyingParties)
+        relyingPartyTrust?.requireTrustedBy<RelyingPartyTrust.Certificates>("trusted relying party certificates") {
+            certChain.requireTrustedSigningCertificate(it.certificates)
         }
         signedRequest.verifyRequestObjectSignature(leaf.decodedPublicKey.getOrElse {
             throw InvalidRequest("Could not read key from certificate in x5c", it)
@@ -312,4 +320,29 @@ internal class AuthorizationRequestValidator(
             throw InvalidRequest("response_url is null, but response_mode is $responseMode")
         }
     }
+}
+
+/**
+ * Requires at least one configured trust source of type [T] to establish trust, i.e. to have [check] succeed:
+ * The configured sources are a union, so any one of them accepting the relying party is enough.
+ *
+ * Sources are consulted in order and the first one to accept wins, so the remaining ones are not consulted at
+ * all: They may fetch a trust list or hit a database, and once trust is established there is nothing left to ask.
+ *
+ * Throws when no source of type [T] is configured at all, naming [configured], since configuring trust at all
+ * means it has to be established and there is no material to do that with. Throws [rejected] when every source
+ * rejected, reporting why each one did: [check] throws to reject.
+ */
+@Throws(OAuth2Exception::class)
+private inline fun <reified T : RelyingPartyTrust> Set<RelyingPartyTrust>.requireTrustedBy(
+    configured: String,
+    rejected: String = "not trusted by any configured $configured",
+    check: (T) -> Unit,
+) {
+    val sources = filterIsInstance<T>().ifEmpty { throw InvalidRequest("no $configured configured") }
+    val failures = mutableListOf<Throwable>()
+    for (source in sources) {
+        failures += catchingUnwrapped { check(source) }.exceptionOrNull() ?: return
+    }
+    throw InvalidRequest("$rejected: ${failures.joinToString { it.message ?: it::class.simpleName ?: "" }}")
 }

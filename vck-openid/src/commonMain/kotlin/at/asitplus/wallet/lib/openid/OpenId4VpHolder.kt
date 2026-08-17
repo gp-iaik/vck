@@ -49,7 +49,6 @@ import at.asitplus.wallet.lib.jws.JwsHeaderCertOrJwk
 import at.asitplus.wallet.lib.jws.SignJwt
 import at.asitplus.wallet.lib.jws.SignJwtFun
 import at.asitplus.wallet.lib.oidc.RequestObjectJwsVerifier
-import io.github.aakira.napier.Napier
 import at.asitplus.wallet.lib.oidvci.OAuth2Error
 import at.asitplus.wallet.lib.oidvci.OAuth2Exception
 import at.asitplus.wallet.lib.oidvci.OAuth2Exception.InvalidRequest
@@ -102,7 +101,7 @@ class OpenId4VpHolder @JvmOverloads constructor(
     @Deprecated("No longer invoked. Replace with `relyingPartyTrust` for use in `AuthorizationRequestValidator`")
     private val requestObjectJwsVerifier: RequestObjectJwsVerifier? = null,
     /** How to establish trust in the relying party sending an authorization request, or `null` for trusting all. */
-    private val relyingPartyTrust: RelyingPartyTrust? = null,
+    private val relyingPartyTrust: Set<RelyingPartyTrust>? = null,
     /** Stores our nonce used when fetching authn requests using POST. */
     private val walletNonceMapStore: MapStore<String, String> = DefaultMapStore(),
     /** Source for random bytes, i.e., nonces for encrypted responses. */

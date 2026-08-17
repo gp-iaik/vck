@@ -56,7 +56,7 @@ class OpenId4VpWallet(
         OpenId4VpHolder.DEFAULT_ALLOWED_DC_API_ORIGIN_SCHEMES
     },
     /** How to establish trust in the relying party, to be passed on to [OpenId4VpHolder]. */
-    relyingPartyTrust: RelyingPartyTrust? = null,
+    relyingPartyTrust: Set<RelyingPartyTrust>? = null,
 ) {
 
     sealed interface AuthenticationResult
