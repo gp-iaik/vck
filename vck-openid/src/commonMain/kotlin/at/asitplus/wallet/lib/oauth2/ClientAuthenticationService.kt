@@ -22,6 +22,7 @@ interface ClientAuthenticationService {
 
     /**
      * Authenticates the client by some data in the request.
+     * @param validatedClientKey the client's public key, extracted from a DPoP proof.
      * Return `null` when there is no claimed identity at all.
      */
     suspend fun authenticateClient(

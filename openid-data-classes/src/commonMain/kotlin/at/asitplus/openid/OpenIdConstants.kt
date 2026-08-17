@@ -102,6 +102,9 @@ object OpenIdConstants {
     /** `attest_jwt_client_auth` */
     const val AUTH_METHOD_ATTEST_JWT_CLIENT_AUTH = "attest_jwt_client_auth"
 
+    /** `attest_jwt_client_auth_dpop` */
+    const val AUTH_METHOD_ATTEST_JWT_CLIENT_AUTH_DPOP = "attest_jwt_client_auth_dpop"
+
     /** `prompt` */
     const val PARAMETER_PROMPT = "prompt"
 

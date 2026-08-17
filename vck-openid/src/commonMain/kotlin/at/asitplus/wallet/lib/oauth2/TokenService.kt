@@ -135,6 +135,7 @@ interface TokenService {
                 refreshTokenNonceService = refreshTokenNonceService,
                 dpopNonceService = dpopNonceService,
                 issuerKey = keyMaterial.jsonWebKey,
+                supportedSignatureAlgorithms = verificationAlgorithms,
             ),
             dpopSigningAlgValuesSupportedStrings = verificationAlgorithms.map { it.identifier }.toSet(),
             supportsRefreshTokens = true,

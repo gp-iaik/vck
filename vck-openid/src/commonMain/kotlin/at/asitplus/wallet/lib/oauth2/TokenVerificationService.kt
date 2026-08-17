@@ -11,6 +11,7 @@ import at.asitplus.openid.OpenIdConstants.TOKEN_TYPE_DPOP
 import at.asitplus.signum.indispensable.io.Base64UrlStrict
 import at.asitplus.signum.indispensable.josef.JsonWebKey
 import at.asitplus.signum.indispensable.josef.JsonWebToken
+import at.asitplus.signum.indispensable.josef.JwsAlgorithm
 import at.asitplus.signum.indispensable.josef.JwsCompactTyped
 import at.asitplus.wallet.lib.NonceService
 import at.asitplus.wallet.lib.jws.JwsContentTypeConstants
@@ -82,6 +83,10 @@ class JwtTokenVerificationService(
     private val clock: Clock = System,
     /** Time leeway for verification of timestamps in access tokens and refresh tokens. */
     private val timeLeeway: Duration = 5.minutes,
+    /** Maximum age of DPoP proofs. */
+    private val maxAgePoP: Duration = 10.minutes,
+    /** Supported verification algorithms */
+    private val supportedSignatureAlgorithms: Collection<JwsAlgorithm.Signature> = setOf(JwsAlgorithm.Signature.ES256),
 ) : TokenVerificationService {
 
     override suspend fun validateRefreshToken(
@@ -91,7 +96,13 @@ class JwtTokenVerificationService(
     ): String {
         val tokenJwt = validateToken(refreshToken, JwsContentTypeConstants.RT_JWT, refreshTokenNonceService)
         // ath is not required on /token endpoints
-        validateDpopProof(null, tokenJwt, httpRequest, dpopNonceService, validatedClientKey)
+        validateDpopProof(
+            accessToken = null,
+            tokenJwt = tokenJwt,
+            httpRequest = httpRequest,
+            dpopNonceService = dpopNonceService,
+            validatedClientKey = validatedClientKey
+        )
         return refreshToken
     }
 
@@ -153,10 +164,15 @@ class JwtTokenVerificationService(
     ): JwsCompactTyped<JsonWebToken> = httpRequest.dpop?.also {
         verifyJwsObject(it.jws).getOrElse { throw InvalidDpopProof("DPoP JWT not verified.", it) }
         if (it.jws.jwsHeader.type != JwsContentTypeConstants.DPOP_JWT) {
-            throw InvalidDpopProof("invalid type: ${it.jws.jwsHeader.type}")
+            throw InvalidDpopProof("DPoP JWT invalid type: ${it.jws.jwsHeader.type}")
         }
         if (it.jws.jwsHeader.jsonWebKey == null) {
             throw InvalidDpopProof("DPoP JWT contains no public key")
+        }
+        if (it.jws.jwsHeader.algorithm !is JwsAlgorithm.Signature ||
+            it.jws.jwsHeader.algorithm !in supportedSignatureAlgorithms
+        ) {
+            throw InvalidDpopProof("DPoP JWT unsupported alg: ${it.jws.jwsHeader.algorithm}")
         }
         if (it.payload.httpTargetUrl != httpRequest.url) {
             throw InvalidDpopProof("DPoP JWT htu incorrect: ${it.payload.httpTargetUrl}")
@@ -167,10 +183,13 @@ class JwtTokenVerificationService(
         if (it.payload.jwtId == null) {
             throw InvalidDpopProof("DPoP JWT contains no jwtId")
         }
-        if (it.payload.issuedAt == null) {
-            throw InvalidDpopProof("DPoP JWT contains no issuedAt")
-        } else if (it.payload.issuedAt!! > (clock.now() + timeLeeway)) {
-            throw InvalidDpopProof("DPoP JWT issuedAt in future: ${it.payload.issuedAt}")
+        val issuedAt = it.payload.issuedAt
+            ?: throw InvalidDpopProof("DPoP JWT contains no issuedAt")
+        if (issuedAt > (clock.now() + timeLeeway)) {
+            throw InvalidDpopProof("DPoP JWT issuedAt in future: $issuedAt")
+        }
+        if (issuedAt < (clock.now() - maxAgePoP - timeLeeway)) {
+            throw InvalidDpopProof("DPoP JWT issued too long ago: $issuedAt")
         }
     } ?: throw InvalidDpopProof("no dpop proof in header")
 

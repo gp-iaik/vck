@@ -9,6 +9,7 @@ import at.asitplus.openid.RequestParameters
 import at.asitplus.openid.TokenIntrospectionRequest
 import at.asitplus.openid.TokenIntrospectionResponse
 import at.asitplus.openid.TokenResponseParameters
+import at.asitplus.signum.indispensable.josef.JwsAlgorithm
 import at.asitplus.signum.indispensable.josef.JwsCompactTyped
 import at.asitplus.signum.indispensable.josef.JsonWebToken
 import at.asitplus.testballoon.matrix.fixture
@@ -388,6 +389,114 @@ val OAuth2ClientDPoPTest by matrixSuite {
         test("reject DPoP proof with iat in the future") {
             shouldThrow<OAuth2Exception.InvalidDpopProof> {
                 it.validateDpop(it.dpopProof { proof -> proof.copy(issuedAt = Clock.System.now() + 1.hours) })
+            }
+        }
+
+        test("reject DPoP proof issued too long ago") {
+            // RFC 9449 4.3: the creation time must be within an acceptable window, so a proof stays replayable
+            // for as long as its nonce lives without a lower bound on iat
+            shouldThrow<OAuth2Exception.InvalidDpopProof> {
+                it.validateDpop(it.dpopProof { proof -> proof.copy(issuedAt = Clock.System.now() - 24.hours) })
+            }
+        }
+
+        test("reject DPoP proof with an algorithm the AS does not advertise") {
+            // RFC 9449 4.3: alg must be an asymmetric algorithm the server supports, i.e. one of the algorithms
+            // published as dpop_signing_alg_values_supported
+            val es384Only = TokenService.jwt(
+                keyMaterial = it.issuerKey,
+                verificationAlgorithms = setOf(JwsAlgorithm.Signature.ES384),
+            )
+            es384Only.dpopSigningAlgValuesSupportedStrings shouldBe setOf(JwsAlgorithm.Signature.ES384.identifier)
+
+            val es256Proof = BuildDPoPHeader(
+                signDpop = it.signDpop,
+                url = it.tokenUrl,
+                nonce = es384Only.dpopNonce(),
+                randomSource = RandomSource.Default,
+            )
+            es256Proof.jws.jwsHeader.algorithm shouldBe JwsAlgorithm.Signature.ES256
+
+            @Suppress("DEPRECATION")
+            shouldThrow<OAuth2Exception.InvalidDpopProof> {
+                es384Only.verification.extractValidatedClientKey(
+                    RequestInfo(url = it.tokenUrl, method = HttpMethod.Post, dpop = es256Proof)
+                ).getOrThrow()
+            }
+        }
+
+        test("reject duplicate DPoP headers") {
+            // draft-10 7.3 and RFC 9449 4.2: exactly one proof, so a second header cannot be smuggled past the
+            // parsed single-value accessor
+            val proof = it.dpopProof()
+            val duplicated = RequestInfo(
+                url = it.tokenUrl,
+                method = HttpMethod.Post,
+                headers = headers {
+                    append(HttpHeaders.DPoP, proof.toString())
+                    append(HttpHeaders.DPoP, proof.toString())
+                },
+            )
+
+            shouldThrow<OAuth2Exception.InvalidDpopProof> {
+                it.tokenService.verification.extractValidatedClientKey(duplicated).getOrThrow()
+            }
+        }
+
+        test("token exchange consumes the DPoP nonce only once") {
+            val token = it.getAccessToken()
+            val resource = it.server.metadata().userInfoEndpoint.shouldNotBeNull()
+
+            @Suppress("DEPRECATION")
+            val exchanged = it.server.token(
+                request = it.client.createTokenRequestParameters(
+                    state = it.state,
+                    authorization = OAuth2Client.AuthorizationForToken.TokenExchange(token.accessToken),
+                    resource = resource,
+                ),
+                httpRequest = RequestInfo(
+                    url = it.tokenUrl,
+                    method = HttpMethod.Post,
+                    dpop = BuildDPoPHeader(
+                        signDpop = it.signDpop,
+                        url = it.tokenUrl,
+                        accessToken = token.accessToken,
+                        nonce = it.server.getDpopNonce(),
+                        randomSource = RandomSource.Default,
+                    ),
+                ),
+            ).getOrThrow()
+
+            exchanged.accessToken shouldNotBe token.accessToken
+        }
+
+        test("token exchange rejects a subject token bound to another key") {
+            val token = it.getAccessToken()
+            val resource = it.server.metadata().userInfoEndpoint.shouldNotBeNull()
+            val otherKey = SignJwt<JsonWebToken>(EphemeralKeyWithoutCert(), JwsHeaderCertOrJwk())
+
+            // Guards the test above against passing because the ath and cnf.jkt checks were dropped along with
+            // the second nonce check
+            @Suppress("DEPRECATION")
+            shouldThrow<OAuth2Exception> {
+                it.server.token(
+                    request = it.client.createTokenRequestParameters(
+                        state = it.state,
+                        authorization = OAuth2Client.AuthorizationForToken.TokenExchange(token.accessToken),
+                        resource = resource,
+                    ),
+                    httpRequest = RequestInfo(
+                        url = it.tokenUrl,
+                        method = HttpMethod.Post,
+                        dpop = BuildDPoPHeader(
+                            signDpop = otherKey,
+                            url = it.tokenUrl,
+                            accessToken = token.accessToken,
+                            nonce = it.server.getDpopNonce(),
+                            randomSource = RandomSource.Default,
+                        ),
+                    ),
+                ).getOrThrow()
             }
         }
 

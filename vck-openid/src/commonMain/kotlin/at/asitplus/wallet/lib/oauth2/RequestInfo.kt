@@ -38,28 +38,29 @@ data class RequestInfo @JvmOverloads constructor(
 
     /** Value of the header `DPoP` (RFC 9449). The value of the header is a JSON Web Token (JWT) */
     val dpop: JwsCompactTyped<JsonWebToken>?
-        get() = headers.parseJwt(HttpHeaders.DPoP)
+        get() = headers.parseSingletonJwt(HttpHeaders.DPoP)
 
     /**
      * Value of the header `OAuth-Client-Attestation` (OAuth 2.0 Attestation-Based Client Authentication).
      * A JWT that conforms to the structure and syntax as defined in Section 4.2
      */
     val clientAttestation: JwsCompactTyped<JsonWebToken>?
-        get() = headers.parseJwt(HttpHeaders.OAuthClientAttestation)
+        get() = headers.parseSingletonJwt(HttpHeaders.OAuthClientAttestation)
 
     /**
      * Value of the header `OAuth-Client-Attestation-PoP` (OAuth 2.0 Attestation-Based Client Authentication).
      * A JWT that adheres to the structure and syntax as defined in Section 4.3
      */
     val clientAttestationPop: JwsCompactTyped<JsonWebToken>?
-        get() = headers.parseJwt(HttpHeaders.OAuthClientAttestationPop)
+        get() = headers.parseSingletonJwt(HttpHeaders.OAuthClientAttestationPop)
 
-    private fun Headers?.parseJwt(headerName: String): JwsTyped<JwsCompact, JsonWebToken>? =
-        catchingUnwrapped {
-            this?.get(headerName)
-                ?.takeIf { it.isNotEmpty() }
-                ?.let { JwsCompactTyped<JsonWebToken>(it) }
-        }.getOrNull()
+    /** Reads and parses the value of `headerName`, and also checks that there is exactly one such header. */
+    private fun Headers?.parseSingletonJwt(headerName: String): JwsTyped<JwsCompact, JsonWebToken>? =
+        this?.contains(headerName)?.takeIf { it }?.let {
+            catchingUnwrapped {
+                getAll(headerName).orEmpty().single().let { JwsCompactTyped<JsonWebToken>(it) }
+            }.getOrNull()
+        }
 
 }
 

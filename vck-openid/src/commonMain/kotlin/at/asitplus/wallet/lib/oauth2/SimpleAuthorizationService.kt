@@ -155,6 +155,15 @@ class SimpleAuthorizationService @JvmOverloads constructor(
         SignJwt(EphemeralKeyWithoutCert(), JwsHeaderCertOrJwk()),
 ) : OAuth2AuthorizationServerAdapter, AuthorizationService {
 
+    init {
+        if (clientAuthenticationService.supportedAuthMethods.orEmpty()
+                .contains(OpenIdConstants.AUTH_METHOD_ATTEST_JWT_CLIENT_AUTH_DPOP)
+            && tokenService.dpopSigningAlgValuesSupportedStrings.orEmpty().isEmpty()
+        ) {
+            throw IllegalArgumentException("Client authn DPoP combined mode requires Token Service with DPoP support")
+        }
+    }
+
     companion object {
         val DEFAULT_WALLET_ATTESTATION_ALGORITHMS: Set<JwsAlgorithm.Signature> = setOf(
             JwsAlgorithm.Signature.ES256,
@@ -756,6 +765,7 @@ class SimpleAuthorizationService @JvmOverloads constructor(
 
     override suspend fun getDpopNonce() = tokenService.dpopNonce()
 
+    /** Extracts and validated the DPoP proof, if there is any */
     private suspend fun RequestInfo?.validatedClientKey(): JsonWebKey? =
         this?.dpop?.let { tokenService.verification.extractValidatedClientKey(this).getOrThrow() }
 }

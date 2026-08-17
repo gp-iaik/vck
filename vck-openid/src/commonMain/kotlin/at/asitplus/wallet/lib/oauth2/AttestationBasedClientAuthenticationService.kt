@@ -4,7 +4,9 @@ import at.asitplus.KmmResult
 import at.asitplus.catching
 import at.asitplus.openid.OAuth2AuthorizationServerMetadata
 import at.asitplus.openid.OpenIdConstants
-import at.asitplus.openid.OpenIdConstants.AUTH_METHOD_ATTEST_JWT_CLIENT_AUTH
+import at.asitplus.openid.OpenIdConstants.ClientAttestationPopMethod
+import at.asitplus.openid.OpenIdConstants.ClientAttestationPopMethod.AttestationPopJwt
+import at.asitplus.openid.OpenIdConstants.ClientAttestationPopMethod.DpopCombined
 import at.asitplus.signum.indispensable.CryptoPublicKey
 import at.asitplus.signum.indispensable.josef.JsonWebKey
 import at.asitplus.signum.indispensable.josef.JsonWebToken
@@ -34,6 +36,8 @@ import kotlin.time.Duration.Companion.minutes
  * * [EUDI TS3 Wallet Unit Attestation 1.5.2](https://github.com/eu-digital-identity-wallet/eudi-doc-standards-and-technical-specifications/blob/main/docs/technical-specifications/ts3-wallet-unit-attestation.md)
  */
 class AttestationBasedClientAuthenticationService @JvmOverloads constructor(
+    private val acceptedPopMethods: Set<ClientAttestationPopMethod> =
+        setOf(AttestationPopJwt),
     /**
      * Used to verify client attestation JWTs. Client attestations are required to carry an `x5c`, so pass
      * [at.asitplus.wallet.lib.jws.VerifyJwsObjectTrustedCertificate] with the certificates of the trusted wallet
@@ -53,11 +57,30 @@ class AttestationBasedClientAuthenticationService @JvmOverloads constructor(
     private val issuerIdentifier: String? = null,
     /** Used for [OAuth2AuthorizationServerMetadata.clientAttestationSigningAlgValuesSupportedStrings] */
     private val supportedSigningAlgorithms: Set<JwsAlgorithm.Signature> = DEFAULT_WALLET_ATTESTATION_ALGORITHMS,
-    /** Service used to create challenges for the clients to use in PoP JWT. */
+    /**
+     * Service used to create challenges for the clients to use in PoP JWT.
+     *
+     * For [OpenIdConstants.ClientAttestationPopMethod.DpopCombined] the challenge is carried in the DPoP proof's
+     * `nonce`, so pass the same instance as `dpopNonceService` of [TokenService.jwt].
+     */
     private val nonceService: NonceService = DefaultNonceService(),
 ) : ClientAuthenticationService {
+
+    init {
+        require(acceptedPopMethods.all { it == DpopCombined || it == AttestationPopJwt }
+                && acceptedPopMethods.isNotEmpty()) {
+            "acceptedPopMethods must contain only $DpopCombined or $AttestationPopJwt"
+        }
+    }
+
     override val supportedAuthMethods: Set<String>
-        get() = setOf(AUTH_METHOD_ATTEST_JWT_CLIENT_AUTH)
+        get() = acceptedPopMethods.mapNotNull {
+            when (it) {
+                AttestationPopJwt -> OpenIdConstants.AUTH_METHOD_ATTEST_JWT_CLIENT_AUTH
+                DpopCombined -> OpenIdConstants.AUTH_METHOD_ATTEST_JWT_CLIENT_AUTH_DPOP
+                else -> null
+            }
+        }.toSet()
 
     override val supportedPopSigningAlgs: Set<String>
         get() = supportedSigningAlgorithms.map { it.identifier }.toSet()
@@ -65,8 +88,8 @@ class AttestationBasedClientAuthenticationService @JvmOverloads constructor(
     override val supportedSigningAlgs: Set<String>
         get() = supportedSigningAlgorithms.map { it.identifier }.toSet()
 
-    override val supportedPopMethods: Set<OpenIdConstants.ClientAttestationPopMethod>
-        get() = setOf(OpenIdConstants.ClientAttestationPopMethod.AttestationPopJwt)
+    override val supportedPopMethods: Set<ClientAttestationPopMethod>
+        get() = acceptedPopMethods
 
     override suspend fun getAttestationChallenge(): String = nonceService.provideNonce()
 
@@ -81,10 +104,6 @@ class AttestationBasedClientAuthenticationService @JvmOverloads constructor(
         val instanceAttestation = httpRequest?.clientAttestation
             ?: throw InvalidClient("client attestation header missing")
 
-        val instanceAttestationPopJwt = httpRequest.clientAttestationPop
-            ?: throw InvalidClient("client attestation pop header missing")
-
-
         instanceAttestation.validateWalletInstanceAttestation(clientId)
         verifyJwsObject(instanceAttestation.jws).getOrElse {
             throw InvalidClient("client attestation JWT not verified", it)
@@ -92,17 +111,31 @@ class AttestationBasedClientAuthenticationService @JvmOverloads constructor(
 
         val cnf = instanceAttestation.payload.confirmationClaim
             ?: throw InvalidClient("client attestation has no cnf")
-        if (!verifyJwsSignatureWithCnf(instanceAttestationPopJwt.jws, cnf)) {
-            throw InvalidClient("client attestation PoP JWT not verified")
+        val cnfPublicKey = cnf.jsonWebKey?.toCryptoPublicKey()?.getOrThrow()
+        val validatedClientId = (instanceAttestation.payload.subject
+            ?: clientId // validation above should have caught that, but the compiler did not
+            ?: throw InvalidClient("No client_id given"))
+
+        val acceptsCombined = acceptedPopMethods.contains(DpopCombined)
+        val instanceAttestationPopJwt = httpRequest.clientAttestationPop
+        if (instanceAttestationPopJwt != null) {
+            if (acceptedPopMethods.singleOrNull() == DpopCombined)
+                throw InvalidClient("client attestation PoP header not allowed in combined-only mode")
+            if (!verifyJwsSignatureWithCnf(instanceAttestationPopJwt.jws, cnf))
+                throw InvalidClient("client attestation PoP JWT not verified")
+            instanceAttestationPopJwt.validateWalletInstanceAttestationPop(instanceAttestation.payload.subject)
+        } else if (acceptsCombined) {
+            val dpopPublicKey = validatedClientKey?.toCryptoPublicKey()?.getOrNull()
+                ?: throw InvalidClient("DPoP header missing")
+            if (dpopPublicKey != cnfPublicKey)
+                throw InvalidClient("DPoP key does not match client attestation key")
+        } else {
+            throw InvalidClient("client attestation pop header missing")
         }
 
-        // TODO use validatedClientKey
-        instanceAttestationPopJwt.validateWalletInstanceAttestationPop(instanceAttestation.payload.subject)
         AuthenticatedClient(
-            clientId = instanceAttestation.payload.subject
-                ?: clientId // validation above should have caught that, but the compiler did not
-                ?: throw InvalidClient("No client_id given"),
-            publicKey = cnf.jsonWebKey?.toCryptoPublicKey()?.getOrThrow()
+            clientId = validatedClientId,
+            publicKey = cnfPublicKey
         )
     }
 
