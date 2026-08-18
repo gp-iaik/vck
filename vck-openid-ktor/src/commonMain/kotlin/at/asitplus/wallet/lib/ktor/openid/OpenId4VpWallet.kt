@@ -6,6 +6,7 @@ import at.asitplus.catchingUnwrapped
 import at.asitplus.openid.AuthenticationRequestParameters
 import at.asitplus.openid.RequestParametersFrom
 import at.asitplus.signum.supreme.UserInitiatedCancellationReason
+import at.asitplus.wallet.lib.agent.EphemeralEncryptionKeyService
 import at.asitplus.wallet.lib.agent.HolderAgent
 import at.asitplus.wallet.lib.agent.KeyMaterial
 import at.asitplus.wallet.lib.agent.RandomSource
@@ -57,6 +58,8 @@ class OpenId4VpWallet(
     },
     /** How to establish trust in the relying party, to be passed on to [OpenId4VpHolder]. */
     relyingPartyTrust: Set<RelyingPartyTrust>? = null,
+    /** Set to accept encrypted authorization requests, to be passed on to [OpenId4VpHolder]. */
+    ephemeralEncryptionKeyService: EphemeralEncryptionKeyService? = null,
 ) {
 
     sealed interface AuthenticationResult
@@ -104,6 +107,7 @@ class OpenId4VpWallet(
         randomSource = randomSource,
         relyingPartyTrust = relyingPartyTrust,
         allowedDcApiOriginSchemes = allowedDcApiOriginSchemes,
+        ephemeralEncryptionKeyService = ephemeralEncryptionKeyService,
     )
 
     val iso180137AnnexCHolder = Iso180137AnnexCHolder(

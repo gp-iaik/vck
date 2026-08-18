@@ -1,6 +1,9 @@
 package at.asitplus.openid
 
 import at.asitplus.signum.indispensable.josef.JsonWebAlgorithm
+import at.asitplus.signum.indispensable.josef.JsonWebKeySet
+import at.asitplus.signum.indispensable.josef.JweAlgorithm
+import at.asitplus.signum.indispensable.josef.JweEncryption
 import at.asitplus.signum.indispensable.josef.JwsAlgorithm
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -84,6 +87,14 @@ data class OAuth2AuthorizationServerMetadata(
      */
     @SerialName("jwks_uri")
     val jsonWebKeySetUrl: String? = null,
+
+    /**
+     * OpenID4VP: A JSON Web Key Set, as defined in RFC7591, that contains one or more public keys, such as those used
+     * by the Wallet as an input to a key agreement that may be used for encryption of the Authorization Request, see
+     * [OpenID4VP 1.0, 5.10](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#name-request-uri-method-post).
+     */
+    @SerialName("jwks")
+    val jsonWebKeySet: JsonWebKeySet? = null,
 
     /**
      * OPTIONAL.  URL of the authorization server's OAuth 2.0 Dynamic
@@ -184,6 +195,22 @@ data class OAuth2AuthorizationServerMetadata(
      */
     @SerialName("request_object_signing_alg_values_supported")
     val requestObjectSigningAlgorithmsSupportedStrings: Set<String>? = null,
+
+    /**
+     * OIDC Discovery: OPTIONAL. JSON array containing a list of the JWE encryption algorithms (`alg` values) supported
+     * by the OP for Request Objects. These algorithms are used both when the Request Object is passed by value and
+     * when it is passed by reference.
+     */
+    @SerialName("request_object_encryption_alg_values_supported")
+    val requestObjectEncryptionAlgValuesSupportedStrings: Set<String>? = null,
+
+    /**
+     * OIDC Discovery: OPTIONAL. JSON array containing a list of the JWE encryption algorithms (`enc` values) supported
+     * by the OP for Request Objects. These algorithms are used both when the Request Object is passed by value and
+     * when it is passed by reference.
+     */
+    @SerialName("request_object_encryption_enc_values_supported")
+    val requestObjectEncryptionEncValuesSupportedStrings: Set<String>? = null,
 
     /**
      * RFC 9101: Indicates where authorization request needs to be protected as Request Object and provided through
@@ -428,6 +455,24 @@ data class OAuth2AuthorizationServerMetadata(
     @Transient
     val requestObjectSigningAlgorithmsSupported: Set<JwsAlgorithm>? = requestObjectSigningAlgorithmsSupportedStrings
         ?.mapNotNull { it.toJwsAlgorithm() }?.toSet()
+
+    /**
+     * OIDC Discovery: OPTIONAL. JSON array containing a list of the JWE encryption algorithms (`alg` values) supported
+     * by the OP for Request Objects.
+     */
+    @Transient
+    val requestObjectEncryptionAlgValuesSupported: Set<JweAlgorithm>? =
+        requestObjectEncryptionAlgValuesSupportedStrings
+            ?.mapNotNull { s -> JweAlgorithm.entries.firstOrNull { it.identifier == s } }?.toSet()
+
+    /**
+     * OIDC Discovery: OPTIONAL. JSON array containing a list of the JWE encryption algorithms (`enc` values) supported
+     * by the OP for Request Objects.
+     */
+    @Transient
+    val requestObjectEncryptionEncValuesSupported: Set<JweEncryption>? =
+        requestObjectEncryptionEncValuesSupportedStrings
+            ?.mapNotNull { s -> JweEncryption.entries.firstOrNull { it.identifier == s } }?.toSet()
 
     /**
      * RFC 9449: A JSON array containing a list of the JWS alg values (from the `IANA.JOSE.ALGS` registry) supported

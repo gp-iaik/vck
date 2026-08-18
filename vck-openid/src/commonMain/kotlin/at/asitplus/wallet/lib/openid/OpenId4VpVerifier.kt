@@ -181,9 +181,7 @@ class OpenId4VpVerifier @JvmOverloads constructor(
                         .forEach { parameters.append(it.key, it.value) }
                 }.buildString()
                     .toCreatedRequest {
-                        catching {
-                            createSignedRequestObject(requestOptions, it).getOrThrow().toString()
-                        }
+                        requestFactory.createRequestObject(requestOptions, RequestObjectSigning.Redirect, it)
                     }
             }
         }

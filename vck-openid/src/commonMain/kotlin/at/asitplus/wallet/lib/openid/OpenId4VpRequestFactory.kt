@@ -3,6 +3,7 @@ package at.asitplus.wallet.lib.openid
 import at.asitplus.KmmResult
 import at.asitplus.catching
 import at.asitplus.openid.AuthenticationRequestParameters
+import at.asitplus.openid.OAuth2AuthorizationServerMetadata
 import at.asitplus.openid.RelyingPartyMetadata
 import at.asitplus.openid.RequestObjectParameters
 import at.asitplus.openid.ResponseParametersFrom
@@ -14,16 +15,21 @@ import at.asitplus.signum.indispensable.SignatureAlgorithm
 import at.asitplus.signum.indispensable.cosef.toCoseAlgorithm
 import at.asitplus.signum.indispensable.josef.JsonWebKey
 import at.asitplus.signum.indispensable.josef.JsonWebKeySet
+import at.asitplus.signum.indispensable.josef.JweAlgorithm
 import at.asitplus.signum.indispensable.josef.JweEncryption
+import at.asitplus.signum.indispensable.josef.JweHeader
 import at.asitplus.signum.indispensable.josef.JwsCompactTyped
 import at.asitplus.signum.indispensable.josef.toJwsAlgorithm
 import at.asitplus.wallet.lib.NonceService
 import at.asitplus.wallet.lib.agent.EphemeralEncryptionKeyService
+import at.asitplus.wallet.lib.agent.EphemeralKeyWithoutCert
 import at.asitplus.wallet.lib.agent.KeyMaterial
 import at.asitplus.wallet.lib.agent.toEncryptionJsonWebKey
 import at.asitplus.wallet.lib.data.CredentialPresentationRequest.DCQLRequest
 import at.asitplus.wallet.lib.data.toBase64UrlJsonString
 import at.asitplus.wallet.lib.extensions.getEncryptionTargetKey
+import at.asitplus.wallet.lib.jws.EncryptJwe
+import at.asitplus.wallet.lib.jws.EncryptJweFun
 import at.asitplus.wallet.lib.jws.JwsContentTypeConstants
 import at.asitplus.wallet.lib.jws.SignJwtFun
 import at.asitplus.wallet.lib.utils.MapStore
@@ -61,8 +67,13 @@ internal class OpenId4VpRequestFactory(
     supportedAlgorithms: Set<SignatureAlgorithm>,
     /** Used to store issued authn requests to verify the authn response to it. */
     private val stateToAuthnRequestStore: MapStore<String, AuthenticationRequestParameters>,
-    /** Algorithms supported to decrypt responses from wallets, for [metadataWithEncryption]. */
+    /**
+     * Algorithms supported to decrypt responses from wallets, for [metadataWithEncryption], and to encrypt request
+     * objects with, see [createRequestObject].
+     */
     private val supportedJweEncryptionAlgorithms: Set<JweEncryption>,
+    /** Encrypts the request object, if the wallet asked us to in its `wallet_metadata`, see [createRequestObject]. */
+    private val encryptRequestObject: EncryptJweFun = EncryptJwe(EphemeralKeyWithoutCert()),
 ) {
 
     private val supportedJwsAlgorithms = supportedAlgorithms
@@ -154,6 +165,46 @@ internal class OpenId4VpRequestFactory(
             signedRequestObject,
             AuthenticationRequestParameters.serializer(),
         ).getOrThrow()
+    }
+
+    /**
+     * Creates the request object to serve at the `request_uri` endpoint: a signed request object, encrypted to the
+     * wallet's key if it passed one in its `wallet_metadata`, as per
+     * [OpenID4VP 1.0, 5.10](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#name-request-uri-method-post).
+     */
+    suspend fun createRequestObject(
+        requestOptions: OpenId4VpRequestOptions,
+        signing: RequestObjectSigning,
+        requestObjectParameters: RequestObjectParameters? = null,
+    ): KmmResult<String> = catching {
+        val signed = createSignedRequestObject(requestOptions, signing, requestObjectParameters).getOrThrow().toString()
+        requestObjectParameters?.walletMetadata?.encryptionTarget()?.let { (recipientKey, jweEncryption) ->
+            encryptRequestObject(
+                JweHeader(
+                    algorithm = JweAlgorithm.ECDH_ES,
+                    encryption = jweEncryption,
+                    keyId = recipientKey.keyId,
+                    // RFC 7519, 5.2: a nested JWT, i.e. our signed request object inside this JWE, MUST declare `JWT`
+                    contentType = "JWT",
+                ),
+                signed,
+                recipientKey,
+            ).getOrThrow().serialize()
+        } ?: signed
+    }
+
+    /**
+     * The wallet's encryption key and the content encryption algorithm to use, or `null` if the wallet did not ask for
+     * an encrypted request object, or asked for algorithms we don't support.
+     */
+    private fun OAuth2AuthorizationServerMetadata.encryptionTarget(): Pair<JsonWebKey, JweEncryption>? {
+        val recipientKey = jsonWebKeySet?.keys?.getEncryptionTargetKey() ?: return null
+        requestObjectEncryptionAlgValuesSupported?.let { if (JweAlgorithm.ECDH_ES !in it) return null }
+        // the wallet expressing no preference means the OpenID4VP default, otherwise we need a common algorithm
+        val jweEncryption = requestObjectEncryptionEncValuesSupported
+            ?.let { advertised -> advertised.firstOrNull { it in supportedJweEncryptionAlgorithms } ?: return null }
+            ?: JweEncryption.A128GCM
+        return recipientKey to jweEncryption
     }
 
     suspend fun storeAuthnRequest(

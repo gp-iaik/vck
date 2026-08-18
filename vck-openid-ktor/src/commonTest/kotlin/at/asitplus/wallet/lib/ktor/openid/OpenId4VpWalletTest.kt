@@ -9,6 +9,7 @@ import at.asitplus.openid.CredentialFormatEnum
 import at.asitplus.openid.OidcUserInfo
 import at.asitplus.openid.OidcUserInfoExtended
 import at.asitplus.openid.OpenIdConstants.ResponseMode
+import at.asitplus.openid.JarRequestParameters
 import at.asitplus.openid.RequestObjectParameters
 import at.asitplus.openid.RequestParametersFrom
 import at.asitplus.openid.dcql.DCQLClaimsPathPointer
@@ -36,6 +37,7 @@ import at.asitplus.wallet.lib.agent.CredentialToBeIssued
 import at.asitplus.wallet.lib.agent.DCQLMatchingResult
 import at.asitplus.wallet.lib.agent.EphemeralKeyWithSelfSignedCert
 import at.asitplus.wallet.lib.agent.EphemeralKeyWithoutCert
+import at.asitplus.wallet.lib.agent.EphemeralEncryptionKeyService
 import at.asitplus.wallet.lib.agent.HolderAgent
 import at.asitplus.wallet.lib.agent.IssuerAgent
 import at.asitplus.wallet.lib.agent.RandomSource
@@ -112,6 +114,9 @@ val OpenId4VpWalletTest by matrixSuite {
                 responseMode: ResponseMode,
                 clientId: String,
                 storeCredentials: Boolean = true,
+                requestUriMethod: JarRequestParameters.RequestUriMethod =
+                    JarRequestParameters.RequestUriMethod.GET,
+                ephemeralEncryptionKeyService: EphemeralEncryptionKeyService? = null,
             ) {
                 val requestOptions = OpenId4VpRequestOptions(
                     presentationRequest = CredentialPresentationRequestBuilder(
@@ -128,16 +133,20 @@ val OpenId4VpWalletTest by matrixSuite {
                 if (storeCredentials) {
                     storeMockCredentials(scheme, representation, attributes)
                 }
-                setupRelyingPartyService(clientId, requestOptions) {
+                setupRelyingPartyService(clientId, requestOptions, requestUriMethod) {
                     verifyReceivedAttributes(it, attributes)
                 }
-                setupWallet(this.mockEngine)
+                setupWallet(this.mockEngine, ephemeralEncryptionKeyService)
             }
 
-            fun setupWallet(engine: HttpClientEngine) = OpenId4VpWallet(
+            fun setupWallet(
+                engine: HttpClientEngine,
+                ephemeralEncryptionKeyService: EphemeralEncryptionKeyService? = null,
+            ) = OpenId4VpWallet(
                 engine = engine,
                 keyMaterial = keyMaterial,
                 holderAgent = holderAgent,
+                ephemeralEncryptionKeyService = ephemeralEncryptionKeyService,
             ).also { this.wallet = it }
 
             fun verifyReceivedAttributes(
@@ -200,6 +209,8 @@ val OpenId4VpWalletTest by matrixSuite {
             suspend fun setupRelyingPartyService(
                 clientId: String,
                 requestOptions: OpenId4VpRequestOptions,
+                requestUriMethod: JarRequestParameters.RequestUriMethod =
+                    JarRequestParameters.RequestUriMethod.GET,
                 validate: (KmmResult<AuthnResponseResult>) -> Unit,
             ) {
                 val requestEndpointPath = "/request/${uuid4()}"
@@ -212,7 +223,8 @@ val OpenId4VpWalletTest by matrixSuite {
                     requestOptions.copy(responseUrl = responseEndpointPath),
                     CreationOptions.SignedRequestByReference(
                         "http://wallet.example.com/",
-                        "http://rp.example.com$requestEndpointPath"
+                        "http://rp.example.com$requestEndpointPath",
+                        requestUriMethod,
                     )
                 ).getOrThrow()
                 jar.shouldNotBeNull()
@@ -267,6 +279,28 @@ val OpenId4VpWalletTest by matrixSuite {
 
             val state = it.wallet.startAuthorizationResponsePreparation(it.url).getOrThrow()
             // sends the response to the mock RP, which calls verifyReceivedAttributes, which unlocks the latch
+            it.wallet.finalizeAuthorizationResponse(state).getOrThrow()
+                .shouldBeInstanceOf<OpenId4VpWallet.AuthenticationSuccess>()
+                .redirectUri?.let { uri -> HttpClient(it.mockEngine).get(uri) }
+
+            assertPresentation(it.countdownLatch)
+        }
+
+        test("presentEuPidCredentialSdJwtEncryptedRequestByPost") {
+            val euPidSdJwtScheme = AttributeIndex.resolveIdentifier(EU_PID_SD_JWT_VCT, SD_JWT)
+            it.setup(
+                scheme = euPidSdJwtScheme,
+                representation = SD_JWT,
+                attributes = mapOf(
+                    DCQLClaimsPathPointer(EuPidSdJwtDataElements.FAMILY_NAME) to randomString()
+                ),
+                responseMode = ResponseMode.DirectPost,
+                clientId = uuid4().toString(),
+                requestUriMethod = JarRequestParameters.RequestUriMethod.POST,
+                ephemeralEncryptionKeyService = EphemeralEncryptionKeyService(),
+            )
+
+            val state = it.wallet.startAuthorizationResponsePreparation(it.url).getOrThrow()
             it.wallet.finalizeAuthorizationResponse(state).getOrThrow()
                 .shouldBeInstanceOf<OpenId4VpWallet.AuthenticationSuccess>()
                 .redirectUri?.let { uri -> HttpClient(it.mockEngine).get(uri) }

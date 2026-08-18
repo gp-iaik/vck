@@ -384,7 +384,10 @@ val PreRegisteredClientTest by matrixSuite {
             val requestUrl = "https://www.example.com/request/${uuid4()}"
             val (authRequestUrlWithRequestUri, jar) = it.verifierOid4vp.createAuthnRequest(
                 requestOptionsAtomicAttribute(),
-                CreationOptions.RequestByReference(it.walletUrl, requestUrl)
+                // `wallet_nonce` is only sent when fetching the request object with POST, see OpenID4VP 1.0, 5.10
+                CreationOptions.RequestByReference(
+                    it.walletUrl, requestUrl, JarRequestParameters.RequestUriMethod.POST
+                )
             ).getOrThrow()
             jar.shouldNotBeNull()
 

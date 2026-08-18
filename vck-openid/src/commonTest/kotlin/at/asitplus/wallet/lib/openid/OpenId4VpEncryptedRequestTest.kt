@@ -1,0 +1,292 @@
+package at.asitplus.wallet.lib.openid
+
+import at.asitplus.openid.JarRequestParameters
+import at.asitplus.signum.indispensable.josef.JweAlgorithm
+import at.asitplus.signum.indispensable.josef.JweEncryption
+import at.asitplus.signum.indispensable.josef.JweHeader
+import at.asitplus.testballoon.matrix.fixture
+import at.asitplus.testballoon.matrix.matrixSuite
+import at.asitplus.wallet.lib.RequestOptionsCredential
+import at.asitplus.wallet.lib.agent.EphemeralEncryptionKeyService
+import at.asitplus.wallet.lib.agent.EphemeralKeyWithoutCert
+import at.asitplus.wallet.lib.agent.HolderAgent
+import at.asitplus.wallet.lib.agent.RandomSource
+import at.asitplus.wallet.lib.agent.toEncryptionJsonWebKey
+import at.asitplus.wallet.lib.data.ConstantIndex
+import at.asitplus.wallet.lib.jws.EncryptJwe
+import at.asitplus.wallet.lib.openid.DummyCredentialDataProvider.issueAndStorePlainJwt
+import com.benasher44.uuid.uuid4
+import io.kotest.matchers.nulls.shouldNotBeNull
+import io.kotest.matchers.shouldBe
+import io.kotest.matchers.shouldNotBe
+import io.kotest.matchers.types.shouldBeInstanceOf
+import kotlinx.coroutines.runBlocking
+
+/**
+ * Encrypted authorization requests as per
+ * [OpenID4VP 1.0, 5.10](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#name-request-uri-method-post).
+ */
+val OpenId4VpEncryptedRequestTest by matrixSuite {
+
+    fixture {
+        runBlocking {
+            val holderKeyMaterial = EphemeralKeyWithoutCert()
+            val holderAgent = HolderAgent(holderKeyMaterial).also {
+                issueAndStorePlainJwt(it, holderKeyMaterial)
+            }
+            object {
+                val holderAgent = holderAgent
+                val clientId = "PRE-REGISTERED-CLIENT-${uuid4()}"
+                val redirectUrl = "https://example.com/rp/${uuid4()}"
+                val walletUrl = "https://example.com/wallet/${uuid4()}"
+                val requestUrl = "https://example.com/request/${uuid4()}"
+                val verifierOid4vp = OpenId4VpVerifier(
+                    keyMaterial = EphemeralKeyWithoutCert(),
+                    clientIdScheme = ClientIdScheme.PreRegistered(clientId, redirectUrl),
+                )
+                val requestOptions = OpenId4VpRequestOptions(
+                    presentationRequest = CredentialPresentationRequestBuilder(
+                        RequestOptionsCredential(ConstantIndex.AtomicAttribute2023)
+                    ).toDCQLRequest(),
+                )
+
+                /** Holder fetching the request object from [requestUrl] with POST, [served] records what it got. */
+                var served: String? = null
+                fun holder(
+                    ephemeralEncryptionKeyService: EphemeralEncryptionKeyService?,
+                    serve: suspend (at.asitplus.openid.RequestObjectParameters?) -> String,
+                ) = OpenId4VpHolder(
+                    holder = holderAgent,
+                    randomSource = RandomSource.Default,
+                    ephemeralEncryptionKeyService = ephemeralEncryptionKeyService,
+                    remoteResourceRetriever = { input ->
+                        if (input.url == requestUrl)
+                            serve(input.requestObjectParameters).also { served = it }
+                        else null
+                    },
+                )
+            }
+        }
+    } - {
+
+        "verifier encrypts request object when the wallet advertises a key" { f ->
+            val (url, jar) = f.verifierOid4vp.createAuthnRequest(
+                f.requestOptions,
+                CreationOptions.SignedRequestByReference(
+                    f.walletUrl, f.requestUrl, JarRequestParameters.RequestUriMethod.POST
+                )
+            ).getOrThrow()
+            jar.shouldNotBeNull()
+
+            val holder = f.holder(EphemeralEncryptionKeyService()) { jar.invoke(it).getOrThrow() }
+
+            holder.createAuthnResponse(url).getOrThrow()
+                .shouldBeInstanceOf<AuthenticationResponseResult.Redirect>()
+                .let { f.verifierOid4vp.validateAuthnResponse(it.url).getOrThrow() }
+                .vpTokenValidationResult.shouldNotBeNull().getOrThrow()
+                .shouldBeInstanceOf<VpTokenValidationResultDCQL>()
+
+            // five parts, i.e. a JWE, not the three parts of the signed request object
+            f.served.shouldNotBeNull().count { it == '.' } shouldBe 4
+        }
+
+        "verifier keeps sending plain request objects when the wallet advertises no key" { f ->
+            val (url, jar) = f.verifierOid4vp.createAuthnRequest(
+                f.requestOptions,
+                CreationOptions.SignedRequestByReference(
+                    f.walletUrl, f.requestUrl, JarRequestParameters.RequestUriMethod.POST
+                )
+            ).getOrThrow()
+            jar.shouldNotBeNull()
+
+            val holder = f.holder(null) { jar.invoke(it).getOrThrow() }
+
+            holder.createAuthnResponse(url).getOrThrow()
+                .shouldBeInstanceOf<AuthenticationResponseResult.Redirect>()
+                .let { f.verifierOid4vp.validateAuthnResponse(it.url).getOrThrow() }
+                .vpTokenValidationResult.shouldNotBeNull().getOrThrow()
+
+            f.served.shouldNotBeNull().count { it == '.' } shouldBe 2
+        }
+
+        "wallet advertising a key still accepts a plain request object" { f ->
+            val (url, jar) = f.verifierOid4vp.createAuthnRequest(
+                f.requestOptions,
+                CreationOptions.SignedRequestByReference(
+                    f.walletUrl, f.requestUrl, JarRequestParameters.RequestUriMethod.POST
+                )
+            ).getOrThrow()
+            jar.shouldNotBeNull()
+
+            // drop the wallet's metadata, so that the verifier does not encrypt
+            val holder = f.holder(EphemeralEncryptionKeyService()) {
+                jar.invoke(it?.copy(walletMetadataString = null)).getOrThrow()
+            }
+
+            holder.createAuthnResponse(url).getOrThrow()
+                .shouldBeInstanceOf<AuthenticationResponseResult.Redirect>()
+                .let { f.verifierOid4vp.validateAuthnResponse(it.url).getOrThrow() }
+                .vpTokenValidationResult.shouldNotBeNull().getOrThrow()
+        }
+
+        "request object encrypted to a key we never advertised is rejected" { f ->
+            val (url, jar) = f.verifierOid4vp.createAuthnRequest(
+                f.requestOptions,
+                CreationOptions.SignedRequestByReference(
+                    f.walletUrl, f.requestUrl, JarRequestParameters.RequestUriMethod.POST
+                )
+            ).getOrThrow()
+            jar.shouldNotBeNull()
+
+            val foreignKey = EphemeralEncryptionKeyService().createKey().toEncryptionJsonWebKey()
+            val holder = f.holder(EphemeralEncryptionKeyService()) { params ->
+                EncryptJwe(EphemeralKeyWithoutCert())(
+                    JweHeader(JweAlgorithm.ECDH_ES, JweEncryption.A128GCM, keyId = foreignKey.keyId),
+                    jar.invoke(params).getOrThrow(),
+                    foreignKey,
+                ).getOrThrow().serialize()
+            }
+
+            holder.createAuthnResponse(url).isFailure shouldBe true
+        }
+
+        "encryption key is consumed, so the same request object can't be replayed" { f ->
+            val (url, jar) = f.verifierOid4vp.createAuthnRequest(
+                f.requestOptions,
+                CreationOptions.SignedRequestByReference(
+                    f.walletUrl, f.requestUrl, JarRequestParameters.RequestUriMethod.POST
+                )
+            ).getOrThrow()
+            jar.shouldNotBeNull()
+
+            var first: String? = null
+            val holder = f.holder(EphemeralEncryptionKeyService()) { params ->
+                // serve the very first (encrypted) request object again on every subsequent fetch
+                first ?: jar.invoke(params).getOrThrow().also { first = it }
+            }
+
+            holder.createAuthnResponse(url).getOrThrow()
+            first.shouldNotBeNull()
+            holder.createAuthnResponse(url).isFailure shouldBe true
+        }
+
+        "encrypted request object is rejected if we did not ask for encryption" { f ->
+            val (url, jar) = f.verifierOid4vp.createAuthnRequest(
+                f.requestOptions,
+                CreationOptions.SignedRequestByReference(
+                    f.walletUrl, f.requestUrl, JarRequestParameters.RequestUriMethod.POST
+                )
+            ).getOrThrow()
+            jar.shouldNotBeNull()
+
+            val foreignKey = EphemeralEncryptionKeyService().createKey().toEncryptionJsonWebKey()
+            val holder = f.holder(null) { params ->
+                EncryptJwe(EphemeralKeyWithoutCert())(
+                    JweHeader(JweAlgorithm.ECDH_ES, JweEncryption.A128GCM, keyId = foreignKey.keyId),
+                    jar.invoke(params).getOrThrow(),
+                    foreignKey,
+                ).getOrThrow().serialize()
+            }
+
+            holder.createAuthnResponse(url).isFailure shouldBe true
+        }
+
+        "no encryption when verifier and wallet share no content encryption algorithm" { f ->
+            val verifier = OpenId4VpVerifier(
+                keyMaterial = EphemeralKeyWithoutCert(),
+                clientIdScheme = ClientIdScheme.PreRegistered(f.clientId, f.redirectUrl),
+                supportedJweEncryptionAlgorithms = setOf(JweEncryption.A128GCM),
+            )
+            val (url, jar) = verifier.createAuthnRequest(
+                f.requestOptions,
+                CreationOptions.SignedRequestByReference(
+                    f.walletUrl, f.requestUrl, JarRequestParameters.RequestUriMethod.POST
+                )
+            ).getOrThrow()
+            jar.shouldNotBeNull()
+
+            val holder = OpenId4VpHolder(
+                holder = f.holderAgent,
+                randomSource = RandomSource.Default,
+                ephemeralEncryptionKeyService = EphemeralEncryptionKeyService(),
+                supportedJweEncryptionAlgorithms = setOf(JweEncryption.A256GCM),
+                remoteResourceRetriever = { input ->
+                    if (input.url == f.requestUrl)
+                        jar.invoke(input.requestObjectParameters).getOrThrow().also { f.served = it }
+                    else null
+                },
+            )
+
+            holder.createAuthnResponse(url).getOrThrow()
+                .shouldBeInstanceOf<AuthenticationResponseResult.Redirect>()
+                .let { verifier.validateAuthnResponse(it.url).getOrThrow() }
+                .vpTokenValidationResult.shouldNotBeNull().getOrThrow()
+
+            // no common algorithm, so the verifier serves the plain signed request object
+            f.served.shouldNotBeNull().count { it == '.' } shouldBe 2
+        }
+
+        "request object dropping the wallet_nonce we sent is rejected" { f ->
+            val (url, jar) = f.verifierOid4vp.createAuthnRequest(
+                f.requestOptions,
+                CreationOptions.SignedRequestByReference(
+                    f.walletUrl, f.requestUrl, JarRequestParameters.RequestUriMethod.POST
+                )
+            ).getOrThrow()
+            jar.shouldNotBeNull()
+
+            // drop the nonce, so that the verifier can't echo it back in the request object
+            val holder = f.holder(EphemeralEncryptionKeyService()) {
+                jar.invoke(it?.copy(walletNonce = null)).getOrThrow()
+            }
+
+            holder.createAuthnResponse(url).isFailure shouldBe true
+        }
+
+        "no wallet metadata is sent when fetching the request object with GET" { f ->
+            val (url, jar) = f.verifierOid4vp.createAuthnRequest(
+                f.requestOptions,
+                CreationOptions.SignedRequestByReference(
+                    f.walletUrl, f.requestUrl, JarRequestParameters.RequestUriMethod.GET
+                )
+            ).getOrThrow()
+            jar.shouldNotBeNull()
+
+            var params: at.asitplus.openid.RequestObjectParameters? = null
+            val holder = f.holder(EphemeralEncryptionKeyService()) {
+                params = it
+                jar.invoke(it).getOrThrow()
+            }
+
+            holder.createAuthnResponse(url).getOrThrow()
+                .shouldBeInstanceOf<AuthenticationResponseResult.Redirect>()
+                .let { f.verifierOid4vp.validateAuthnResponse(it.url).getOrThrow() }
+                .vpTokenValidationResult.shouldNotBeNull().getOrThrow()
+
+            params shouldBe null
+        }
+
+        "wallet metadata carries exactly one encryption key, fresh for every request" { f ->
+            val keyIds = mutableListOf<String?>()
+            val (url, jar) = f.verifierOid4vp.createAuthnRequest(
+                f.requestOptions,
+                CreationOptions.SignedRequestByReference(
+                    f.walletUrl, f.requestUrl, JarRequestParameters.RequestUriMethod.POST
+                )
+            ).getOrThrow()
+            jar.shouldNotBeNull()
+
+            val holder = f.holder(EphemeralEncryptionKeyService()) { params ->
+                params.shouldNotBeNull().walletMetadata.shouldNotBeNull().jsonWebKeySet.shouldNotBeNull()
+                    .keys.also { it.size shouldBe 1 }
+                    .first().also { keyIds += it.keyId }
+                jar.invoke(params).getOrThrow()
+            }
+
+            holder.createAuthnResponse(url).getOrThrow()
+            holder.createAuthnResponse(url).getOrThrow()
+            keyIds.size shouldBe 2
+            keyIds[0].shouldNotBeNull() shouldNotBe keyIds[1].shouldNotBeNull()
+        }
+    }
+}

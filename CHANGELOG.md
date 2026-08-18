@@ -33,6 +33,12 @@ Release 8.0.0 (unreleased):
     - In `OpenId4VpVerifier` and `DcApiVerifier` the `decryptionKeyMaterial` is now nullable and defaults to `null`: it is only advertised in `metadataWithEncryption`, i.e. for client identifier schemes that distribute it out-of-band, which is not conformant to HAIP. `metadata` carries no key to encrypt responses to at all
     - In `OpenId4VpVerifier` and `DcApiVerifier` remove the `decryptJwe` function from the list of constructor arguments
     - Consume the request's nonce when validating an authentication response, regardless of the validation result, i.e. authentication responses are not retryable
+    - Support encrypted authorization requests as per OpenID4VP 1.0, Section 5.10: pass an `ephemeralEncryptionKeyService` to `OpenId4VpHolder` to advertise one ephemeral ECDH-ES key per request in `wallet_metadata.jwks` when fetching the request object with `request_uri_method=post`, and to decrypt the JWE the verifier returns. Keys are single-use, and consumed only after authenticated decryption
+    - Add `jwks`, `request_object_encryption_alg_values_supported` and `request_object_encryption_enc_values_supported` to `OAuth2AuthorizationServerMetadata`
+    - `OpenId4VpVerifier` encrypts the signed request object served at `request_uri` whenever the wallet passed a suitable encryption key in `wallet_metadata`, using ECDH-ES with the wallet's preferred `enc`, falling back to `A128GCM`
+    - Fix decoding of form-encoded parameters whose value is a JSON string, e.g. `wallet_metadata` posted to the request URI endpoint: these were parsed as JSON objects and thus failed to deserialize
+    - Send `wallet_metadata` and `wallet_nonce` only when fetching the request object with `request_uri_method=post`, which is the only channel OpenID4VP 1.0, Section 5.10 defines for them: they were previously appended as query parameters on `get` too
+    - Terminate request processing if the request object does not carry back the `wallet_nonce` we sent, as required by OpenID4VP 1.0, Section 5.10.1: a request object omitting the claim entirely was previously accepted
 - OpenID for Verifiable Credential Issuance:
     - Rework validation of key attestation statements
     - Make sure a `nonce` provided by the credential issuer can only be used for one request to the credential endpoint

@@ -24,6 +24,8 @@ import at.asitplus.signum.indispensable.SignatureAlgorithm
 import at.asitplus.signum.indispensable.cosef.toCoseAlgorithm
 import at.asitplus.signum.indispensable.josef.JsonWebKey
 import at.asitplus.signum.indispensable.josef.JsonWebKeySet
+import at.asitplus.signum.indispensable.josef.JweAlgorithm
+import at.asitplus.signum.indispensable.josef.JweEncryption
 import at.asitplus.signum.indispensable.josef.JwsCompact
 import at.asitplus.signum.indispensable.josef.io.joseCompliantSerializer
 import at.asitplus.signum.indispensable.josef.toJsonWebKey
@@ -31,6 +33,7 @@ import at.asitplus.signum.indispensable.josef.toJwsAlgorithm
 import at.asitplus.signum.supreme.UserInitiatedCancellationReason
 import at.asitplus.wallet.lib.RemoteResourceRetrieverFunction
 import at.asitplus.wallet.lib.RemoteResourceRetrieverInput
+import at.asitplus.wallet.lib.agent.EphemeralEncryptionKeyService
 import at.asitplus.wallet.lib.agent.EphemeralKeyWithoutCert
 import at.asitplus.wallet.lib.agent.Holder
 import at.asitplus.wallet.lib.agent.HolderAgent
@@ -38,6 +41,7 @@ import at.asitplus.wallet.lib.agent.KeyMaterial
 import at.asitplus.wallet.lib.agent.PresentationResponseParameters.*
 import at.asitplus.wallet.lib.agent.RandomSource
 import at.asitplus.wallet.lib.agent.SubjectCredentialStore
+import at.asitplus.wallet.lib.agent.toEncryptionJsonWebKey
 import at.asitplus.wallet.lib.cbor.CoseHeaderNone
 import at.asitplus.wallet.lib.cbor.SignCoseDetached
 import at.asitplus.wallet.lib.cbor.SignCoseDetachedFun
@@ -116,6 +120,16 @@ class OpenId4VpHolder @JvmOverloads constructor(
      * is invoked for every request so applications can update their policy at runtime.
      */
     private val allowedDcApiOriginSchemes: suspend () -> Set<String> = { DEFAULT_ALLOWED_DC_API_ORIGIN_SCHEMES },
+    /**
+     * Set to accept encrypted authorization requests, as per
+     * [OpenID4VP 1.0, 5.10](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#name-request-uri-method-post):
+     * When fetching the request object with `request_uri_method=post`, we advertise one ephemeral encryption key per
+     * request in `wallet_metadata`, for the verifier to encrypt the request object to. Leave `null` to keep requesting
+     * plain request objects. May hold a [MapStore] to synchronize these keys between instances.
+     */
+    private val ephemeralEncryptionKeyService: EphemeralEncryptionKeyService? = null,
+    /** Advertised in `wallet_metadata` to encrypt authorization requests, see [ephemeralEncryptionKeyService]. */
+    private val supportedJweEncryptionAlgorithms: Set<JweEncryption> = JweEncryption.entries.toSet(),
 ) {
 
     companion object {
@@ -177,10 +191,27 @@ class OpenId4VpHolder @JvmOverloads constructor(
         )
     }
 
+    /**
+     * The [metadata] to send when fetching a request object, carrying one ephemeral encryption key valid for exactly
+     * that request, if [ephemeralEncryptionKeyService] is set. Must be evaluated exactly once per request.
+     */
+    private suspend fun metadataForRequestObject(): OAuth2AuthorizationServerMetadata =
+        ephemeralEncryptionKeyService?.let {
+            metadata.copy(
+                jsonWebKeySet = JsonWebKeySet(listOf(it.createKey().toEncryptionJsonWebKey())),
+                requestObjectEncryptionAlgValuesSupportedStrings = setOf(JweAlgorithm.ECDH_ES.identifier),
+                requestObjectEncryptionEncValuesSupportedStrings = supportedJweEncryptionAlgorithms
+                    .map { enc -> enc.identifier }.toSet(),
+            )
+        } ?: metadata
+
     private val requestParser: RequestParser =
-        RequestParser(remoteResourceRetriever) {
+        RequestParser(
+            remoteResourceRetriever = remoteResourceRetriever,
+            ephemeralEncryptionKeyService = ephemeralEncryptionKeyService,
+        ) {
             RequestObjectParameters(
-                metadata = metadata,
+                metadata = metadataForRequestObject(),
                 nonce = uuid4().toString().also { walletNonceMapStore.put(it, it) })
         }
 
