@@ -36,6 +36,11 @@ Release 8.0.0 (unreleased):
 - OpenID for Verifiable Credential Issuance:
     - Rework validation of key attestation statements
     - Make sure a `nonce` provided by the credential issuer can only be used for one request to the credential endpoint
+    - Security fix: encrypt the credential request whenever it carries `credential_response_encryption`, as required by OpenID4VCI 1.0, i.e. *"Credential Request encryption MUST be used if the `credential_response_encryption` parameter is included, to prevent it being substituted by an attacker"*. `WalletEncryptionService` previously sent its response encryption key in a plain request unless request encryption was required by either side, and `CredentialIssuer` accepted such requests
+    - In `WalletEncryptionService`, if the issuer publishes no key to encrypt the request with, `credential_response_encryption` is omitted, or the request fails if the issuer requires response encryption
+    - Announce a response encryption key specific to each credential request, with a `kid` for the issuer to echo in the JWE header. Replace `WalletEncryptionService.decryptionKeyMaterial` with `ephemeralEncryptionKeyService`, which may hold a `MapStore` to synchronize these keys between the wallet component creating the request and the one receiving the response
+    - `IssuerEncryptionService` advertises `credential_response_encryption` whenever it can encrypt responses, and `credential_request_encryption` whenever it can decrypt requests, instead of only when some encryption is required, so that clients can opt into encryption. Requiring response encryption now also declares `credential_request_encryption.encryption_required`, since the client's key may only be sent in an encrypted request
+    - Select the issuer's credential request encryption key by its intended use instead of taking the first key of the set, and use the `alg` of the client's response encryption key for the JWE, as required by OpenID4VCI 1.0
 - Signature verification:
     - `VerifyJwsObject` and `VerifyCoseSignature` now only ever use the key material asserted by the JWS header resp. the COSE headers, and make no trust decision
     - Add `VerifyJwsObjectTrusted` and `VerifyCoseSignatureTrusted`, where the supplied keys are the only accepted signers

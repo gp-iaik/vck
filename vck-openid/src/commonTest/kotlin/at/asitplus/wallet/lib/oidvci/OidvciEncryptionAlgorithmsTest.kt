@@ -128,41 +128,15 @@ val OidvciEncryptionAlgorithmsTest by matrixSuite {
             }
         }
 
-        test("wallet does not encrypt credential request and decrypts credential response") {
-            val requestOptions = WalletService.RequestOptions(ConstantIndex.AtomicAttribute2023, PLAIN_JWT)
-            val credentialFormat = it.client.selectSupportedCredentialFormat(requestOptions, it.issuer.metadata)
-                .shouldNotBeNull()
-            val scope = credentialFormat.scope.shouldNotBeNull()
-            val token = it.getToken(scope)
-
-            it.issuer.credential(
-                authorizationHeader = token.toHttpHeaderValue(),
-                params = it.client.createCredential(
-                    tokenResponse = token,
-                    // trick wallet into not encrypting
-                    metadata = it.issuer.metadata.copy(credentialRequestEncryption = null),
-                    credentialFormat = credentialFormat,
-                    clientNonce = it.issuer.nonceWithDpopNonce().getOrThrow().response.clientNonce,
-                ).getOrThrow().shouldBeSingleton().first()
-                    .shouldBeInstanceOf<WalletService.CredentialRequest.Plain>().apply {
-                        request.credentialResponseEncryption.shouldNotBeNull().apply {
-                            jweEncryption shouldBe it.issuerEnc
-                        }
-                    },
-                credentialDataProvider = DummyOAuth2IssuerCredentialDataProvider,
-            ).getOrThrow().apply {
-                shouldBeInstanceOf<CredentialIssuer.CredentialResponse.Encrypted>().apply {
-                    response.header.encryption shouldBe it.issuerEnc
-                }
-                it.client.parseCredentialResponse(this, PLAIN_JWT, ConstantIndex.AtomicAttribute2023)
-                    .getOrThrow().first().shouldBeInstanceOf<Holder.StoreCredentialInput.Vc>().apply {
-                        signedVcJws.payload.vc.credentialSubject.shouldBeInstanceOf<JsonElement>()
-                            .also { credentialSubject ->
-                                shouldNotThrowAny {
-                                    AtomicAttribute2023.fromJsonElement(credentialSubject)
-                                }
-                            }
-                    }
+        // the encrypted round trip above cannot show these, as they travel inside the encrypted request
+        test("wallet announces the issuer's encryption algorithm, and a key id, in the request parameters") {
+            WalletEncryptionService(
+                requestResponseEncryption = true,
+                fallbackJweEncryptionAlgorithm = it.walletEnc,
+            ).credentialResponseEncryption(it.issuer.metadata).shouldNotBeNull().apply {
+                jweEncryption shouldBe it.issuerEnc
+                // OID4VCI: lets the issuer echo it in the JWE `kid` header, so we find the matching private key
+                jsonWebKey.keyId.shouldNotBeNull()
             }
         }
     }

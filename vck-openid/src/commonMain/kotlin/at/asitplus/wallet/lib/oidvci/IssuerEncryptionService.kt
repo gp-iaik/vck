@@ -47,22 +47,46 @@ class IssuerEncryptionService @JvmOverloads constructor(
     private val decryptCredentialRequest: DecryptJweFun? = DecryptJwe(decryptionKeyMaterial),
 ) {
 
-    val metadataCredentialRequestEncryption = if (requireResponseEncryption || requireRequestEncryption)
+    /**
+     * Advertised whenever we are able to decrypt credential requests. Requiring response encryption implies requiring
+     * request encryption, since the client's response encryption key may only be sent in an encrypted request.
+     */
+    val metadataCredentialRequestEncryption = if (decryptCredentialRequest != null)
         SupportedAlgorithmsContainer(
             supportedEncryptionAlgorithmsStrings = supportedJweEncryptionAlgorithms.map { it.identifier }.toSet(),
-            encryptionRequired = requireRequestEncryption,
+            encryptionRequired = requireRequestEncryption || requireResponseEncryption,
             jsonWebKeySet = JsonWebKeySet(
                 listOf(decryptionKeyMaterial.publicKey.toJsonWebKey(decryptionKeyMaterial.identifier).forEncryption())
             )
         )
     else null
 
-    val metadataCredentialResponseEncryption = if (requireResponseEncryption || requireRequestEncryption)
-        SupportedAlgorithmsContainer(
-            supportedAlgorithmsStrings = supportedJweAlgorithms.map { it.identifier }.toSet(),
-            supportedEncryptionAlgorithmsStrings = supportedJweEncryptionAlgorithms.map { it.identifier }.toSet(),
-            encryptionRequired = requireResponseEncryption,
-        ) else null
+    /** Advertised unconditionally: we can always encrypt a response to the key the client sends us. */
+    val metadataCredentialResponseEncryption = SupportedAlgorithmsContainer(
+        supportedAlgorithmsStrings = supportedJweAlgorithms.map { it.identifier }.toSet(),
+        supportedEncryptionAlgorithmsStrings = supportedJweEncryptionAlgorithms.map { it.identifier }.toSet(),
+        encryptionRequired = requireResponseEncryption,
+    )
+
+    /**
+     * Rejects a credential request that should have been encrypted, as per OID4VCI: *"When encryption of a message was
+     * required but the received message is unencrypted, it SHOULD be rejected"*, and *"Credential Request encryption
+     * MUST be used if the `credential_response_encryption` parameter is included, to prevent it being substituted by
+     * an attacker"*.
+     */
+    @Throws(OAuth2Exception::class)
+    internal fun validateRequestEncryption(
+        request: CredentialRequestParameters,
+        hasBeenEncrypted: Boolean
+    ) {
+        if (hasBeenEncrypted) return
+        if (requireRequestEncryption)
+            throw InvalidEncryptionParameters("Credential request has not been encrypted")
+        if (request.credentialResponseEncryption != null)
+            throw InvalidEncryptionParameters(
+                "Credential response encryption parameters may only be sent in an encrypted credential request"
+            )
+    }
 
     /** Decrypts credential requests from the client. */
     internal suspend fun decrypt(
@@ -94,8 +118,8 @@ class IssuerEncryptionService @JvmOverloads constructor(
     ): CredentialIssuer.CredentialResponse =
         request.credentialResponseEncryption?.let {
             val recipientKey = it.jsonWebKey
-            val jweAlg = it.jweAlgorithm
-                ?: (recipientKey.algorithm as? JweAlgorithm)
+            val jweAlg = (recipientKey.algorithm as? JweAlgorithm)
+                ?: it.jweAlgorithm
                 ?: supportedJweAlgorithms.firstOrNull()
             val jweEnc = it.jweEncryption
                 ?: throw InvalidEncryptionParameters("Unsupported enc: ${it.jweEncryptionString}")

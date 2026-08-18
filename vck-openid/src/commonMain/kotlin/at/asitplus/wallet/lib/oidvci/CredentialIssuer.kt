@@ -223,8 +223,7 @@ class CredentialIssuer @JvmOverloads constructor(
     ): KmmResult<CredentialResponse> = catching {
         Napier.i("credential called")
         Napier.d("credential called with $authorizationHeader, $request")
-        if (!hasBeenEncrypted && encryptionService.requireRequestEncryption)
-            throw InvalidEncryptionParameters("Credential request has not been encrypted")
+        encryptionService.validateRequestEncryption(request, hasBeenEncrypted)
         val validated = authorizationService.validateAccessToken(authorizationHeader, requestInfo).getOrThrow()
         request.validateAgainstToken(validated)
         val userInfo = validated.userInfoExtended
