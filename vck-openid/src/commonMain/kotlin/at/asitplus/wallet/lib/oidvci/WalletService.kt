@@ -71,6 +71,7 @@ import at.asitplus.wallet.lib.jws.SdJwtSigned
 import at.asitplus.wallet.lib.jws.SignJwt
 import at.asitplus.wallet.lib.oauth2.OAuth2Client
 import at.asitplus.wallet.lib.oidvci.CredentialIssuer.CredentialResponse
+import at.asitplus.wallet.lib.oidvci.OAuth2Exception.InvalidEncryptionParameters
 import at.asitplus.wallet.lib.oidvci.OAuth2Exception.InvalidRequest
 import at.asitplus.wallet.lib.oidvci.OAuth2Exception.InvalidToken
 import com.benasher44.uuid.uuid4
@@ -146,17 +147,26 @@ class WalletService @JvmOverloads constructor(
     )
 
     sealed interface CredentialRequest {
+        /** `kid` of the key this request advertised for encrypting its response, if any. */
+        val credentialResponseEncryptionKeyId: String?
+
         /**
          * Send [request] as JSON-serialized content to the server at [IssuerMetadata.credentialEndpointUrl] with media
          * type `application/json` (see [at.asitplus.wallet.lib.data.MediaTypes.Application.JSON]).
          */
-        data class Plain(val request: CredentialRequestParameters) : CredentialRequest
+        data class Plain(val request: CredentialRequestParameters) : CredentialRequest {
+            override val credentialResponseEncryptionKeyId: String?
+                get() = request.credentialResponseEncryption?.jsonWebKey?.keyId
+        }
 
         /**
          * Send [request] as JWE-serialized content to the server at [IssuerMetadata.credentialEndpointUrl] with media
          * type `application/jwt` (see [at.asitplus.wallet.lib.data.MediaTypes.Application.JWT]).
          */
-        data class Encrypted(val request: JweEncrypted) : CredentialRequest
+        data class Encrypted(
+            val request: JweEncrypted,
+            override val credentialResponseEncryptionKeyId: String? = null,
+        ) : CredentialRequest
 
         companion object {
             fun parse(input: String): KmmResult<CredentialRequest> = catching {
@@ -340,7 +350,7 @@ class WalletService @JvmOverloads constructor(
 
     /**
      * Parses [response] received from the credential issuer, mapping to [Holder.StoreCredentialInput],
-     * decrypting the response if required.
+     * rejecting encrypted responses because they require the originating [CredentialRequest].
      */
     suspend fun parseCredentialResponse(
         response: String,
@@ -348,34 +358,76 @@ class WalletService @JvmOverloads constructor(
         representation: CredentialRepresentation,
         scheme: CredentialScheme,
     ): KmmResult<Collection<Holder.StoreCredentialInput>> = catching {
-        response.decryptIfNeeded(isEncrypted)
+        if (isEncrypted)
+            throw InvalidEncryptionParameters("Originating credential request required for encrypted response")
+        joseCompliantSerializer.decodeFromString<CredentialResponseParameters>(response)
             .extractCredentials()
             .map { it.toStoreCredentialInput(representation, scheme) }
     }
 
-    private suspend fun String.decryptIfNeeded(encrypted: Boolean) = if (encrypted)
-        encryptionService.decryptToCredentialResponse(this).getOrThrow()
-    else
-        joseCompliantSerializer.decodeFromString<CredentialResponseParameters>(this)
+    /** Parses a response and binds its encryption to the exact [request] that caused it. */
+    suspend fun parseCredentialResponse(
+        response: String,
+        isEncrypted: Boolean,
+        request: CredentialRequest,
+        representation: CredentialRepresentation,
+        scheme: CredentialScheme,
+    ): KmmResult<Collection<Holder.StoreCredentialInput>> = catching {
+        request.validateResponseEncryption(isEncrypted)
+        val responseParameters = if (isEncrypted)
+            encryptionService.decryptToCredentialResponse(
+                response,
+                request.credentialResponseEncryptionKeyId.shouldBePresent(),
+            ).getOrThrow()
+        else joseCompliantSerializer.decodeFromString<CredentialResponseParameters>(response)
+        responseParameters.extractCredentials().map { it.toStoreCredentialInput(representation, scheme) }
+    }
 
     /**
      * Parses [response] received from the credential issuer, mapping to [Holder.StoreCredentialInput],
-     * decrypting the response if required.
+     * rejecting encrypted responses because they require the originating [CredentialRequest].
      */
     suspend fun parseCredentialResponse(
         response: CredentialResponse,
         representation: CredentialRepresentation,
         scheme: CredentialScheme,
     ): KmmResult<Collection<Holder.StoreCredentialInput>> = catching {
-        response.decryptIfNeeded()
+        if (response is CredentialResponse.Encrypted)
+            throw InvalidEncryptionParameters("Originating credential request required for encrypted response")
+        (response as CredentialResponse.Plain).response
             .extractCredentials()
             .map { it.toStoreCredentialInput(representation, scheme) }
     }
 
-    private suspend fun CredentialResponse.decryptIfNeeded() = when (this) {
-        is CredentialResponse.Plain -> response
-        is CredentialResponse.Encrypted -> encryptionService.decryptToCredentialResponse(response).getOrThrow()
+    /** Parses a response and binds its encryption to the exact [request] that caused it. */
+    suspend fun parseCredentialResponse(
+        response: CredentialResponse,
+        request: CredentialRequest,
+        representation: CredentialRepresentation,
+        scheme: CredentialScheme,
+    ): KmmResult<Collection<Holder.StoreCredentialInput>> = catching {
+        val isEncrypted = response is CredentialResponse.Encrypted
+        request.validateResponseEncryption(isEncrypted)
+        when (response) {
+            is CredentialResponse.Plain -> response.response
+            is CredentialResponse.Encrypted -> encryptionService.decryptToCredentialResponse(
+                response.response,
+                request.credentialResponseEncryptionKeyId.shouldBePresent(),
+            ).getOrThrow()
+        }.extractCredentials().map { it.toStoreCredentialInput(representation, scheme) }
     }
+
+    private fun CredentialRequest.validateResponseEncryption(isEncrypted: Boolean) {
+        val expectedEncrypted = credentialResponseEncryptionKeyId != null
+        if (expectedEncrypted != isEncrypted)
+            throw InvalidEncryptionParameters(
+                if (expectedEncrypted) "Credential response was not encrypted as requested"
+                else "Credential response was encrypted without being requested"
+            )
+    }
+
+    private fun String?.shouldBePresent(): String =
+        this ?: throw InvalidEncryptionParameters("Credential request contains no response encryption key id")
 
     private fun Set<AuthorizationDetails>.toCredentialRequest(): List<CredentialRequestParameters> =
         filterIsInstance<OpenIdAuthorizationDetails>().flatMap {

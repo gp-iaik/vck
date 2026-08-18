@@ -118,10 +118,13 @@ class IssuerEncryptionService @JvmOverloads constructor(
         request.credentialResponseEncryption?.let {
             val recipientKey = it.jsonWebKey
             val jweAlg = (recipientKey.algorithm as? JweAlgorithm)
-                ?: it.jweAlgorithm
-                ?: supportedJweAlgorithms.firstOrNull()
+                ?: throw InvalidEncryptionParameters("Response encryption JWK has no supported alg")
+            if (jweAlg !in supportedJweAlgorithms)
+                throw InvalidEncryptionParameters("Unsupported alg: ${jweAlg.identifier}")
             val jweEnc = it.jweEncryption
                 ?: throw InvalidEncryptionParameters("Unsupported enc: ${it.jweEncryptionString}")
+            if (jweEnc !in supportedJweEncryptionAlgorithms)
+                throw InvalidEncryptionParameters("Unsupported enc: ${jweEnc.identifier}")
             Napier.d("encrypting response for $recipientKey")
             CredentialIssuer.CredentialResponse.Encrypted(
                 encryptCredentialResponse(

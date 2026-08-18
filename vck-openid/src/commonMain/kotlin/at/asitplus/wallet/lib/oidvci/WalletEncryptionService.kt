@@ -55,12 +55,21 @@ class WalletEncryptionService @JvmOverloads constructor(
         DecryptJweWithEphemeralKey(ephemeralEncryptionKeyService),
 ) {
 
+    init {
+        require(supportedJweAlgorithm == JweAlgorithm.ECDH_ES) {
+            "EphemeralEncryptionKeyService only supports ECDH-ES"
+        }
+    }
+
     internal suspend fun wrapCredentialRequest(
         input: CredentialRequestParameters,
         metadata: IssuerMetadata
     ): KmmResult<WalletService.CredentialRequest> = catching {
         if (metadata.shouldEncryptRequest(input)) {
-            WalletService.CredentialRequest.Encrypted(encryptRequest(input, metadata).getOrThrow())
+            WalletService.CredentialRequest.Encrypted(
+                request = encryptRequest(input, metadata).getOrThrow(),
+                credentialResponseEncryptionKeyId = input.credentialResponseEncryption?.jsonWebKey?.keyId,
+            )
         } else {
             WalletService.CredentialRequest.Plain(input)
         }
@@ -135,30 +144,43 @@ class WalletEncryptionService @JvmOverloads constructor(
             Napier.w("Not requesting credential response encryption: the request can't be encrypted")
             return null
         }
+        val jweAlgorithm = issuerSupport.selectAlgorithm()
+        val jweEncryption = issuerSupport.selectEncryption()
+        if (jweAlgorithm == null || jweEncryption == null) {
+            if (encryptionRequired) throw InvalidEncryptionParameters(
+                "Issuer requires credential response encryption, but no supported algorithm combination exists"
+            )
+            Napier.w("Not requesting credential response encryption: no supported algorithm combination exists")
+            return null
+        }
         val key = ephemeralEncryptionKeyService.createKey()
         return CredentialResponseEncryption(
             jsonWebKey = key.toEncryptionJsonWebKey(),
-            jweAlgorithm = issuerSupport.selectAlgorithm() ?: supportedJweAlgorithm,
-            jweEncryption = issuerSupport.selectEncryption() ?: fallbackJweEncryptionAlgorithm,
+            jweAlgorithm = null,
+            jweEncryptionString = jweEncryption.identifier,
         )
     }
 
     /** Decrypts encrypted credential response from the issuer. */
     internal suspend fun decryptToCredentialResponse(
         input: String,
+        expectedKeyId: String,
     ): KmmResult<CredentialResponseParameters> = catching {
         if (input.count { it == '.' } != 4)
             throw InvalidEncryptionParameters("Parsing of JWE failed, not five parts")
         val jwe = JweEncrypted.deserialize(input).getOrElse {
             throw InvalidEncryptionParameters("Parsing of JWE failed", it)
         }
-        decryptToCredentialResponse(jwe).getOrThrow()
+        decryptToCredentialResponse(jwe, expectedKeyId).getOrThrow()
     }
 
     /** Decrypts encrypted credential response from the issuer. */
     internal suspend fun decryptToCredentialResponse(
         input: JweEncrypted,
+        expectedKeyId: String,
     ): KmmResult<CredentialResponseParameters> = catching {
+        if (input.header.keyId != expectedKeyId)
+            throw InvalidEncryptionParameters("Credential response key does not match the credential request")
         if (decryptCredentialResponse == null)
             throw InvalidEncryptionParameters("Issuer sent encrypted response, we can't decode it")
         val decrypted = decryptCredentialResponse(input).getOrElse {

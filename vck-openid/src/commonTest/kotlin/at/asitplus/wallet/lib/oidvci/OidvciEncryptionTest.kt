@@ -14,13 +14,18 @@ package at.asitplus.wallet.lib.oidvci
 
 import at.asitplus.KmmResult
 import at.asitplus.catching
+import at.asitplus.openid.CredentialRequestParameters
 import at.asitplus.openid.CredentialResponseEncryption
+import at.asitplus.openid.CredentialResponseParameters
 import at.asitplus.openid.RequestParameters
+import at.asitplus.openid.SupportedAlgorithmsContainer
 import at.asitplus.openid.TokenResponseParameters
 import at.asitplus.signum.indispensable.josef.JweAlgorithm
+import at.asitplus.signum.indispensable.josef.JweEncrypted
 import at.asitplus.signum.indispensable.josef.JweEncryption
 import at.asitplus.testballoon.matrix.fixture
 import at.asitplus.testballoon.matrix.matrixSuite
+import at.asitplus.wallet.lib.agent.EphemeralEncryptionKeyService
 import at.asitplus.wallet.lib.agent.EphemeralKeyWithoutCert
 import at.asitplus.wallet.lib.agent.Holder
 import at.asitplus.wallet.lib.agent.IssuerAgent
@@ -35,6 +40,7 @@ import at.asitplus.wallet.lib.oauth2.SimpleAuthorizationService
 import at.asitplus.wallet.lib.openid.AuthenticationResponseResult
 import at.asitplus.wallet.lib.openid.DummyOAuth2IssuerCredentialDataProvider
 import at.asitplus.wallet.lib.openid.DummyUserProvider
+import at.asitplus.wallet.lib.utils.DefaultMapStore
 import com.benasher44.uuid.uuid4
 import io.kotest.assertions.throwables.shouldNotThrowAny
 import io.kotest.assertions.throwables.shouldThrow
@@ -104,19 +110,20 @@ val OidvciEncryptionTest by matrixSuite {
             val scope = credentialFormat.scope.shouldNotBeNull()
             val token = it.getToken(scope)
 
+            val request = it.client.createCredential(
+                tokenResponse = token,
+                metadata = it.issuer.metadata,
+                credentialFormat = credentialFormat,
+                clientNonce = it.issuer.nonceWithDpopNonce().getOrThrow().response.clientNonce,
+            ).getOrThrow().shouldBeSingleton().first()
+                .shouldBeInstanceOf<WalletService.CredentialRequest.Encrypted>()
             it.issuer.credential(
                 authorizationHeader = token.toHttpHeaderValue(),
-                params = it.client.createCredential(
-                    tokenResponse = token,
-                    metadata = it.issuer.metadata,
-                    credentialFormat = credentialFormat,
-                    clientNonce = it.issuer.nonceWithDpopNonce().getOrThrow().response.clientNonce,
-                ).getOrThrow().shouldBeSingleton().first()
-                    .shouldBeInstanceOf<WalletService.CredentialRequest.Encrypted>(),
+                params = request,
                 credentialDataProvider = DummyOAuth2IssuerCredentialDataProvider,
             ).getOrThrow().apply {
                 this.shouldBeInstanceOf<CredentialIssuer.CredentialResponse.Encrypted>()
-                it.client.parseCredentialResponse(this, PLAIN_JWT, ConstantIndex.AtomicAttribute2023)
+                it.client.parseCredentialResponse(this, request, PLAIN_JWT, ConstantIndex.AtomicAttribute2023)
                     .getOrThrow().first().shouldBeInstanceOf<Holder.StoreCredentialInput.Vc>().apply {
                         signedVcJws.payload.vc.credentialSubject.shouldBeInstanceOf<JsonElement>()
                             .also { credentialSubject ->
@@ -220,19 +227,20 @@ val OidvciEncryptionTest by matrixSuite {
                 .shouldNotBeNull()
             val token = it.getToken(credentialFormat.scope.shouldNotBeNull())
 
+            val request = client.createCredential(
+                tokenResponse = token,
+                metadata = it.issuer.metadata,
+                credentialFormat = credentialFormat,
+                clientNonce = it.issuer.nonceWithDpopNonce().getOrThrow().response.clientNonce,
+            ).getOrThrow().shouldBeSingleton().first()
+                .shouldBeInstanceOf<WalletService.CredentialRequest.Encrypted>()
             it.issuer.credential(
                 authorizationHeader = token.toHttpHeaderValue(),
-                params = client.createCredential(
-                    tokenResponse = token,
-                    metadata = it.issuer.metadata,
-                    credentialFormat = credentialFormat,
-                    clientNonce = it.issuer.nonceWithDpopNonce().getOrThrow().response.clientNonce,
-                ).getOrThrow().shouldBeSingleton().first()
-                    .shouldBeInstanceOf<WalletService.CredentialRequest.Encrypted>(),
+                params = request,
                 credentialDataProvider = DummyOAuth2IssuerCredentialDataProvider,
             ).getOrThrow().apply {
                 shouldBeInstanceOf<CredentialIssuer.CredentialResponse.Encrypted>()
-                client.parseCredentialResponse(this, PLAIN_JWT, ConstantIndex.AtomicAttribute2023)
+                client.parseCredentialResponse(this, request, PLAIN_JWT, ConstantIndex.AtomicAttribute2023)
                     .getOrThrow().first().shouldBeInstanceOf<Holder.StoreCredentialInput.Vc>()
             }
         }
@@ -327,24 +335,138 @@ val OidvciEncryptionTest by matrixSuite {
                 .shouldNotBeNull()
             val token = it.getToken(credentialFormat.scope.shouldNotBeNull())
 
+            val request = it.client.createCredential(
+                tokenResponse = token,
+                metadata = it.issuer.metadata,
+                credentialFormat = credentialFormat,
+                clientNonce = it.issuer.nonceWithDpopNonce().getOrThrow().response.clientNonce,
+            ).getOrThrow().shouldBeSingleton().first()
             val response = it.issuer.credential(
                 authorizationHeader = token.toHttpHeaderValue(),
-                params = it.client.createCredential(
-                    tokenResponse = token,
-                    metadata = it.issuer.metadata,
-                    credentialFormat = credentialFormat,
-                    clientNonce = it.issuer.nonceWithDpopNonce().getOrThrow().response.clientNonce,
-                ).getOrThrow().shouldBeSingleton().first(),
+                params = request,
                 credentialDataProvider = DummyOAuth2IssuerCredentialDataProvider,
             ).getOrThrow().shouldBeInstanceOf<CredentialIssuer.CredentialResponse.Encrypted>()
 
             // the wallet that made the request holds the matching key, identified by the JWE `kid`
             response.response.header.keyId.shouldNotBeNull()
-            it.client.parseCredentialResponse(response, PLAIN_JWT, ConstantIndex.AtomicAttribute2023).getOrThrow()
+            it.client.parseCredentialResponse(response, PLAIN_JWT, ConstantIndex.AtomicAttribute2023)
+                .isFailure shouldBe true
+            it.client.parseCredentialResponse(response, request, PLAIN_JWT, ConstantIndex.AtomicAttribute2023)
+                .getOrThrow()
             // another wallet, which never announced that key, must not be able to read the credential
             WalletService(encryptionService = WalletEncryptionService(requestResponseEncryption = true))
-                .parseCredentialResponse(response, PLAIN_JWT, ConstantIndex.AtomicAttribute2023)
+                .parseCredentialResponse(response, request, PLAIN_JWT, ConstantIndex.AtomicAttribute2023)
                 .isFailure shouldBe true
+        }
+
+        test("an encrypted response is bound to its credential request and accepted only once") {
+            val requestOptions = WalletService.RequestOptions(ConstantIndex.AtomicAttribute2023, PLAIN_JWT)
+            val credentialFormat = it.client.selectSupportedCredentialFormat(requestOptions, it.issuer.metadata)
+                .shouldNotBeNull()
+            val token = it.getToken(credentialFormat.scope.shouldNotBeNull())
+            suspend fun createRequest() = it.client.createCredential(
+                tokenResponse = token,
+                metadata = it.issuer.metadata,
+                credentialFormat = credentialFormat,
+                clientNonce = it.issuer.nonceWithDpopNonce().getOrThrow().response.clientNonce,
+            ).getOrThrow().shouldBeSingleton().first()
+            suspend fun createResponse(request: WalletService.CredentialRequest) = it.issuer.credential(
+                authorizationHeader = token.toHttpHeaderValue(),
+                params = request,
+                credentialDataProvider = DummyOAuth2IssuerCredentialDataProvider,
+            ).getOrThrow().shouldBeInstanceOf<CredentialIssuer.CredentialResponse.Encrypted>()
+
+            val firstRequest = createRequest()
+            val secondRequest = createRequest()
+            val firstResponse = createResponse(firstRequest)
+            val secondResponse = createResponse(secondRequest)
+
+            it.client.parseCredentialResponse(
+                secondResponse, firstRequest, PLAIN_JWT, ConstantIndex.AtomicAttribute2023
+            ).isFailure shouldBe true
+            it.client.parseCredentialResponse(
+                firstResponse, firstRequest, PLAIN_JWT, ConstantIndex.AtomicAttribute2023
+            ).getOrThrow()
+            it.client.parseCredentialResponse(
+                secondResponse, secondRequest, PLAIN_JWT, ConstantIndex.AtomicAttribute2023
+            ).getOrThrow()
+            it.client.parseCredentialResponse(
+                secondResponse, secondRequest, PLAIN_JWT, ConstantIndex.AtomicAttribute2023
+            ).isFailure shouldBe true
+        }
+
+        test("another wallet instance can decrypt through a shared ephemeral key store") {
+            val keyStore = DefaultMapStore<String, String>()
+            val requestClient = WalletService(
+                encryptionService = WalletEncryptionService(
+                    requestResponseEncryption = true,
+                    ephemeralEncryptionKeyService = EphemeralEncryptionKeyService(keyStore),
+                )
+            )
+            val responseClient = WalletService(
+                encryptionService = WalletEncryptionService(
+                    requestResponseEncryption = true,
+                    ephemeralEncryptionKeyService = EphemeralEncryptionKeyService(keyStore),
+                )
+            )
+            val requestOptions = WalletService.RequestOptions(ConstantIndex.AtomicAttribute2023, PLAIN_JWT)
+            val credentialFormat = requestClient.selectSupportedCredentialFormat(requestOptions, it.issuer.metadata)
+                .shouldNotBeNull()
+            val token = it.getToken(credentialFormat.scope.shouldNotBeNull())
+            val request = requestClient.createCredential(
+                tokenResponse = token,
+                metadata = it.issuer.metadata,
+                credentialFormat = credentialFormat,
+                clientNonce = it.issuer.nonceWithDpopNonce().getOrThrow().response.clientNonce,
+            ).getOrThrow().shouldBeSingleton().first()
+            val response = it.issuer.credential(
+                authorizationHeader = token.toHttpHeaderValue(),
+                params = request,
+                credentialDataProvider = DummyOAuth2IssuerCredentialDataProvider,
+            ).getOrThrow()
+
+            responseClient.parseCredentialResponse(
+                response, request, PLAIN_JWT, ConstantIndex.AtomicAttribute2023
+            ).getOrThrow()
+        }
+
+        test("wallet omits optional response encryption when no algorithm is shared") {
+            val unsupported = it.issuer.metadata.copy(
+                credentialResponseEncryption = SupportedAlgorithmsContainer(
+                    supportedAlgorithmsStrings = setOf("unsupported"),
+                    supportedEncryptionAlgorithmsStrings = setOf(JweEncryption.A256GCM.identifier),
+                    encryptionRequired = false,
+                )
+            )
+            WalletEncryptionService(requestResponseEncryption = true)
+                .credentialResponseEncryption(unsupported).shouldBeNull()
+
+            shouldThrow<OAuth2Exception.InvalidEncryptionParameters> {
+                WalletEncryptionService(requestResponseEncryption = true).credentialResponseEncryption(
+                    unsupported.copy(
+                        credentialResponseEncryption = unsupported.credentialResponseEncryption?.copy(
+                            encryptionRequired = true
+                        )
+                    )
+                )
+            }
+        }
+
+        test("issuer rejects response algorithms it did not advertise") {
+            val responseEncryption = WalletEncryptionService(requestResponseEncryption = true)
+                .credentialResponseEncryption(it.issuer.metadata).shouldNotBeNull()
+            val request = CredentialRequestParameters(credentialResponseEncryption = responseEncryption)
+
+            shouldThrow<OAuth2Exception.InvalidEncryptionParameters> {
+                IssuerEncryptionService(supportedJweAlgorithms = emptySet()).encryptResponse(
+                    CredentialResponseParameters(), request
+                )
+            }
+            shouldThrow<OAuth2Exception.InvalidEncryptionParameters> {
+                IssuerEncryptionService(supportedJweEncryptionAlgorithms = emptySet()).encryptResponse(
+                    CredentialResponseParameters(), request
+                )
+            }
         }
 
         test("issuer fails to encrypt response") {

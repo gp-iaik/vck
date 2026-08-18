@@ -336,6 +336,7 @@ class OpenId4VciClient(
             oid4vciService.parseCredentialResponse(
                 response = response.bodyAsText(),
                 isEncrypted = response.contentType()?.match(ContentType.parse(MediaTypes.Application.JWT)) == true,
+                request = request,
                 representation = format.format.toRepresentation(),
                 scheme = scheme
             ).getOrThrow()

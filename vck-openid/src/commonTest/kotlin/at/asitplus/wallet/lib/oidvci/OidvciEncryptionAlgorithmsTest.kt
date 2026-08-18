@@ -100,23 +100,24 @@ val OidvciEncryptionAlgorithmsTest by matrixSuite {
             val scope = credentialFormat.scope.shouldNotBeNull()
             val token = it.getToken(scope)
 
+            val request = it.client.createCredential(
+                tokenResponse = token,
+                metadata = it.issuer.metadata,
+                credentialFormat = credentialFormat,
+                clientNonce = it.issuer.nonceWithDpopNonce().getOrThrow().response.clientNonce,
+            ).getOrThrow().shouldBeSingleton().first()
+                .shouldBeInstanceOf<WalletService.CredentialRequest.Encrypted>().apply {
+                    request.header.encryption shouldBe it.issuerEnc
+                }
             it.issuer.credential(
                 authorizationHeader = token.toHttpHeaderValue(),
-                params = it.client.createCredential(
-                    tokenResponse = token,
-                    metadata = it.issuer.metadata,
-                    credentialFormat = credentialFormat,
-                    clientNonce = it.issuer.nonceWithDpopNonce().getOrThrow().response.clientNonce,
-                ).getOrThrow().shouldBeSingleton().first()
-                    .shouldBeInstanceOf<WalletService.CredentialRequest.Encrypted>().apply {
-                        request.header.encryption shouldBe it.issuerEnc
-                    },
+                params = request,
                 credentialDataProvider = DummyOAuth2IssuerCredentialDataProvider,
             ).getOrThrow().apply {
                 shouldBeInstanceOf<CredentialIssuer.CredentialResponse.Encrypted>().apply {
                     response.header.encryption shouldBe it.issuerEnc
                 }
-                it.client.parseCredentialResponse(this, PLAIN_JWT, ConstantIndex.AtomicAttribute2023)
+                it.client.parseCredentialResponse(this, request, PLAIN_JWT, ConstantIndex.AtomicAttribute2023)
                     .getOrThrow().first().shouldBeInstanceOf<Holder.StoreCredentialInput.Vc>().apply {
                         signedVcJws.payload.vc.credentialSubject.shouldBeInstanceOf<JsonElement>()
                             .also { credentialSubject ->
