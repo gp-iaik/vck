@@ -7,18 +7,17 @@ import at.asitplus.openid.CredentialResponseEncryption
 import at.asitplus.openid.CredentialResponseParameters
 import at.asitplus.openid.IssuerMetadata
 import at.asitplus.openid.SupportedAlgorithmsContainer
-import at.asitplus.signum.indispensable.josef.JsonWebKey
 import at.asitplus.signum.indispensable.josef.JweAlgorithm
 import at.asitplus.signum.indispensable.josef.JweEncrypted
 import at.asitplus.signum.indispensable.josef.JweEncryption
 import at.asitplus.signum.indispensable.josef.JweHeader
 import at.asitplus.signum.indispensable.josef.io.joseCompliantSerializer
-import at.asitplus.signum.indispensable.josef.toJsonWebKey
 import at.asitplus.signum.indispensable.symmetric.isAuthenticated
 import at.asitplus.signum.indispensable.symmetric.requiresNonce
 import at.asitplus.wallet.lib.agent.EphemeralEncryptionKeyService
 import at.asitplus.wallet.lib.agent.EphemeralKeyWithoutCert
 import at.asitplus.wallet.lib.agent.KeyMaterial
+import at.asitplus.wallet.lib.agent.toEncryptionJsonWebKey
 import at.asitplus.wallet.lib.extensions.getEncryptionTargetKey
 import at.asitplus.wallet.lib.jws.DecryptJweFun
 import at.asitplus.wallet.lib.jws.DecryptJweWithEphemeralKey
@@ -138,7 +137,7 @@ class WalletEncryptionService @JvmOverloads constructor(
         }
         val key = ephemeralEncryptionKeyService.createKey()
         return CredentialResponseEncryption(
-            jsonWebKey = key.publicKey.toJsonWebKey(key.identifier).forEncryption(),
+            jsonWebKey = key.toEncryptionJsonWebKey(),
             jweAlgorithm = issuerSupport.selectAlgorithm() ?: supportedJweAlgorithm,
             jweEncryption = issuerSupport.selectEncryption() ?: fallbackJweEncryptionAlgorithm,
         )
@@ -168,8 +167,5 @@ class WalletEncryptionService @JvmOverloads constructor(
         joseCompliantSerializer.decodeFromString<CredentialResponseParameters>(decrypted.payload)
     }
 
-    // should always be ecdh-es for encryption
-    private fun JsonWebKey.forEncryption(): JsonWebKey =
-        this.copy(algorithm = JweAlgorithm.ECDH_ES, publicKeyUse = "enc")
 
 }

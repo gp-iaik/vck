@@ -14,14 +14,13 @@ import at.asitplus.signum.indispensable.SignatureAlgorithm
 import at.asitplus.signum.indispensable.cosef.toCoseAlgorithm
 import at.asitplus.signum.indispensable.josef.JsonWebKey
 import at.asitplus.signum.indispensable.josef.JsonWebKeySet
-import at.asitplus.signum.indispensable.josef.JweAlgorithm
 import at.asitplus.signum.indispensable.josef.JweEncryption
 import at.asitplus.signum.indispensable.josef.JwsCompactTyped
-import at.asitplus.signum.indispensable.josef.toJsonWebKey
 import at.asitplus.signum.indispensable.josef.toJwsAlgorithm
 import at.asitplus.wallet.lib.NonceService
 import at.asitplus.wallet.lib.agent.EphemeralEncryptionKeyService
 import at.asitplus.wallet.lib.agent.KeyMaterial
+import at.asitplus.wallet.lib.agent.toEncryptionJsonWebKey
 import at.asitplus.wallet.lib.data.CredentialPresentationRequest.DCQLRequest
 import at.asitplus.wallet.lib.data.toBase64UrlJsonString
 import at.asitplus.wallet.lib.extensions.getEncryptionTargetKey
@@ -70,17 +69,16 @@ internal class OpenId4VpRequestFactory(
         .mapNotNull { it.toJwsAlgorithm().getOrNull()?.identifier }
     private val supportedCoseAlgorithms = supportedAlgorithms
         .mapNotNull { it.toCoseAlgorithm().getOrNull()?.coseValue }
+    private val supportedJweEncryptionAlgorithmStrings = supportedJweEncryptionAlgorithms
+        .map { it.identifier }.toSet()
 
     /**
-     * Creates the [at.asitplus.openid.RelyingPartyMetadata], without encryption (see [metadataWithEncryption]).
-     * Carries a JSON Web Key Set only if a long-lived [decryptionKeyMaterial] has been configured to be distributed
-     * out-of-band, requests built here embed a key specific to that request instead, see
-     * [metadataWithEphemeralEncryptionKey].
+     * Creates the [at.asitplus.openid.RelyingPartyMetadata], without encryption, i.e. without any key to encrypt
+     * responses to: those are advertised by [metadataWithEncryption] resp. [metadataWithEphemeralEncryptionKey].
      */
     val metadata by lazy {
         RelyingPartyMetadata(
             redirectUris = listOfNotNull((clientIdScheme as? ClientIdScheme.RedirectUri)?.redirectUri),
-            jsonWebKeySet = decryptionKeyMaterial?.let { JsonWebKeySet(listOf(it.toEncryptionJsonWebKey())) },
             vpFormatsSupported = VpFormatsSupported(
                 vcJwt = SupportedAlgorithmsContainerJwt(
                     algorithmStrings = supportedJwsAlgorithms.toSet()
@@ -105,7 +103,9 @@ internal class OpenId4VpRequestFactory(
      * identifier schemes that do not convey client metadata in the request itself. Requests built here embed a key
      * specific to that request instead, see [metadataWithEphemeralEncryptionKey].
      */
-    val metadataWithEncryption by lazy { metadata.requestingEncryptedResponses() }
+    val metadataWithEncryption by lazy {
+        metadataRequestingEncryptedResponses(decryptionKeyMaterial?.toEncryptionJsonWebKey())
+    }
 
     /**
      * Creates the [RelyingPartyMetadata] with an encryption key valid for exactly one authentication request, as
@@ -114,13 +114,13 @@ internal class OpenId4VpRequestFactory(
      * and
      * [OpenID4VC HAIP 1.0](https://openid.net/specs/openid4vc-high-assurance-interoperability-profile-1_0-final.html),
      */
-    private suspend fun metadataWithEphemeralEncryptionKey(): RelyingPartyMetadata = metadata.copy(
-        jsonWebKeySet = JsonWebKeySet(listOf(ephemeralEncryptionKeyService.createKey().toEncryptionJsonWebKey()))
-    ).requestingEncryptedResponses()
+    private suspend fun metadataWithEphemeralEncryptionKey(): RelyingPartyMetadata =
+        metadataRequestingEncryptedResponses(ephemeralEncryptionKeyService.createKey().toEncryptionJsonWebKey())
 
-    private fun RelyingPartyMetadata.requestingEncryptedResponses(): RelyingPartyMetadata = copy(
-        encryptedResponseEncValuesSupportedString = supportedJweEncryptionAlgorithms.map { it.identifier }.toSet(),
-        jsonWebKeySet = jsonWebKeySet?.let { JsonWebKeySet(it.keys.map { key -> key.copy(publicKeyUse = "enc") }) }
+    /** [encryptionKey] is the only key advertised, so that holders can't pick anything else to encrypt to. */
+    private fun metadataRequestingEncryptedResponses(encryptionKey: JsonWebKey?): RelyingPartyMetadata = metadata.copy(
+        encryptedResponseEncValuesSupportedString = supportedJweEncryptionAlgorithmStrings,
+        jsonWebKeySet = encryptionKey?.let { JsonWebKeySet(listOf(it)) },
     )
 
     suspend fun createPlainAuthnRequest(
@@ -243,10 +243,6 @@ internal class OpenId4VpRequestFactory(
             else -> null
         }
     }
-
-    // should always be ecdh-es for encryption
-    private fun KeyMaterial.toEncryptionJsonWebKey(): JsonWebKey =
-        publicKey.toJsonWebKey(identifier).copy(algorithm = JweAlgorithm.ECDH_ES)
 
     companion object {
         /**

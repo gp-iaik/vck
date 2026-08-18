@@ -141,13 +141,16 @@ class DcApiVerifier @JvmOverloads constructor(
     )
 
     /**
-     * Creates the [at.asitplus.openid.RelyingPartyMetadata], without encryption (see [metadataWithEncryption])
+     * Creates the [at.asitplus.openid.RelyingPartyMetadata], without encryption, i.e. without any key to encrypt
+     * responses to (see [metadataWithEncryption])
      */
     val metadata get() = requestFactory.metadata
 
     /**
      * Creates the [RelyingPartyMetadata], but with parameters set to request encryption of pushed authentication
-     * responses, see [RelyingPartyMetadata.encryptedResponseEncValues].
+     * responses, see [RelyingPartyMetadata.encryptedResponseEncValues], advertising [decryptionKeyMaterial].
+     *
+     * Only useful to publish out-of-band: requests carry a key specific to that request instead.
      */
     val metadataWithEncryption get() = requestFactory.metadataWithEncryption
 
