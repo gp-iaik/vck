@@ -67,10 +67,7 @@ internal class OpenId4VpRequestFactory(
     supportedAlgorithms: Set<SignatureAlgorithm>,
     /** Used to store issued authn requests to verify the authn response to it. */
     private val stateToAuthnRequestStore: MapStore<String, AuthenticationRequestParameters>,
-    /**
-     * Algorithms supported to decrypt responses from wallets, for [metadataWithEncryption], and to encrypt request
-     * objects with, see [createRequestObject].
-     */
+    /** Algorithms supported to decrypt responses from wallets and to encrypt request objects. */
     private val supportedJweEncryptionAlgorithms: Set<JweEncryption>,
     /** Encrypts the request object, if the wallet asked us to in its `wallet_metadata`, see [createRequestObject]. */
     private val encryptRequestObject: EncryptJweFun = EncryptJwe(EphemeralKeyWithoutCert()),
@@ -178,34 +175,42 @@ internal class OpenId4VpRequestFactory(
         requestObjectParameters: RequestObjectParameters? = null,
     ): KmmResult<String> = catching {
         val signed = createSignedRequestObject(requestOptions, signing, requestObjectParameters).getOrThrow().toString()
-        requestObjectParameters?.walletMetadata?.encryptionTarget()?.let { (recipientKey, jweEncryption) ->
+        val encryptionTarget = requestObjectParameters?.walletMetadata?.encryptionTarget
+        if (encryptionTarget == null) {
+            signed
+        } else {
             encryptRequestObject(
-                JweHeader(
+                header = JweHeader(
                     algorithm = JweAlgorithm.ECDH_ES,
-                    encryption = jweEncryption,
-                    keyId = recipientKey.keyId,
+                    encryption = encryptionTarget.second,
+                    keyId = encryptionTarget.first.keyId,
                     // RFC 7519, 5.2: a nested JWT, i.e. our signed request object inside this JWE, MUST declare `JWT`
                     contentType = "JWT",
                 ),
-                signed,
-                recipientKey,
+                payload = signed,
+                recipientKey = encryptionTarget.first,
             ).getOrThrow().serialize()
-        } ?: signed
+        }
     }
 
     /**
      * The wallet's encryption key and the content encryption algorithm to use, or `null` if the wallet did not ask for
      * an encrypted request object, or asked for algorithms we don't support.
      */
-    private fun OAuth2AuthorizationServerMetadata.encryptionTarget(): Pair<JsonWebKey, JweEncryption>? {
-        val recipientKey = jsonWebKeySet?.keys?.getEncryptionTargetKey() ?: return null
-        requestObjectEncryptionAlgValuesSupported?.let { if (JweAlgorithm.ECDH_ES !in it) return null }
-        // the wallet expressing no preference means the OpenID4VP default, otherwise we need a common algorithm
-        val jweEncryption = requestObjectEncryptionEncValuesSupported
-            ?.let { advertised -> advertised.firstOrNull { it in supportedJweEncryptionAlgorithms } ?: return null }
-            ?: JweEncryption.A128GCM
-        return recipientKey to jweEncryption
-    }
+    private val OAuth2AuthorizationServerMetadata.encryptionTarget: Pair<JsonWebKey, JweEncryption>?
+        get() {
+            val recipientKey = jsonWebKeySet?.keys?.getEncryptionTargetKey()
+                ?: return null
+            requestObjectEncryptionAlgValuesSupported?.let {
+                if (JweAlgorithm.ECDH_ES !in it)
+                    return null
+            }
+            // the wallet expressing no preference means the OpenID4VP default, otherwise we need a common algorithm
+            val jweEncryption = requestObjectEncryptionEncValuesSupported
+                ?.let { advertised -> advertised.firstOrNull { it in supportedJweEncryptionAlgorithms } ?: return null }
+                ?: JweEncryption.A128GCM
+            return recipientKey to jweEncryption
+        }
 
     suspend fun storeAuthnRequest(
         authenticationRequestParameters: AuthenticationRequestParameters,

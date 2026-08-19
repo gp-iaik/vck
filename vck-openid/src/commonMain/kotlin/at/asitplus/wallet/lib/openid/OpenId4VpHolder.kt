@@ -120,17 +120,19 @@ class OpenId4VpHolder @JvmOverloads constructor(
      * is invoked for every request so applications can update their policy at runtime.
      */
     private val allowedDcApiOriginSchemes: suspend () -> Set<String> = { DEFAULT_ALLOWED_DC_API_ORIGIN_SCHEMES },
-    /**
-     * Set to accept encrypted authorization requests, as per
-     * [OpenID4VP 1.0, 5.10](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#name-request-uri-method-post):
-     * When fetching the request object with `request_uri_method=post`, we advertise one ephemeral encryption key per
-     * request in `wallet_metadata`, for the verifier to encrypt the request object to. Leave `null` to keep requesting
-     * plain request objects. May hold a [MapStore] to synchronize these keys between instances.
-     */
+    /** Set to accept encrypted authorization requests fetched with a POST (when RP supports that). */
     private val ephemeralEncryptionKeyService: EphemeralEncryptionKeyService? = null,
     /** Advertised in `wallet_metadata` to encrypt authorization requests, see [ephemeralEncryptionKeyService]. */
     private val supportedJweEncryptionAlgorithms: Set<JweEncryption> = JweEncryption.entries.toSet(),
+    /** Set to reject a plain request object we have fetched with POST (when RP supports that) */
+    private val requireEncryptedRequests: Boolean = false,
 ) {
+
+    init {
+        require(!requireEncryptedRequests || ephemeralEncryptionKeyService != null) {
+            "requireEncryptedRequests needs an ephemeralEncryptionKeyService to advertise a key with"
+        }
+    }
 
     companion object {
         const val HTTPS_ORIGIN_SCHEME = "https"
@@ -205,15 +207,15 @@ class OpenId4VpHolder @JvmOverloads constructor(
             )
         } ?: metadata
 
-    private val requestParser: RequestParser =
-        RequestParser(
-            remoteResourceRetriever = remoteResourceRetriever,
-            ephemeralEncryptionKeyService = ephemeralEncryptionKeyService,
-        ) {
-            RequestObjectParameters(
-                metadata = metadataForRequestObject(),
-                nonce = uuid4().toString().also { walletNonceMapStore.put(it, it) })
-        }
+    private val requestParser = RequestParser(
+        remoteResourceRetriever = remoteResourceRetriever,
+        ephemeralEncryptionKeyService = ephemeralEncryptionKeyService,
+        requireEncryptedRequests = requireEncryptedRequests,
+    ) {
+        RequestObjectParameters(
+            metadata = metadataForRequestObject(),
+            nonce = uuid4().toString().also { walletNonceMapStore.put(it, it) })
+    }
 
     /**
      * Pass in the URL sent by the Verifier (containing the [AuthenticationRequestParameters] as query parameters),

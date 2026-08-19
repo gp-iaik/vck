@@ -1,6 +1,7 @@
 package at.asitplus.openid
 
 import at.asitplus.dcapi.request.ExchangeProtocolIdentifier
+import at.asitplus.openid.RequestParametersFrom.SerialNames.DECRYPTED_FROM
 import at.asitplus.openid.RequestParametersFrom.SerialNames.JSON_STRING
 import at.asitplus.openid.RequestParametersFrom.SerialNames.JWS
 import at.asitplus.openid.RequestParametersFrom.SerialNames.PARAMETERS
@@ -10,6 +11,7 @@ import at.asitplus.signum.indispensable.io.TransformingSerializerTemplate
 import at.asitplus.signum.indispensable.josef.JWS
 import at.asitplus.signum.indispensable.josef.JwsCompact
 import at.asitplus.signum.indispensable.josef.JwsFlattened
+import at.asitplus.signum.indispensable.josef.JweHeader
 import at.asitplus.signum.indispensable.josef.JwsGeneral
 import at.asitplus.signum.indispensable.josef.JwsTyped
 import io.ktor.http.*
@@ -61,6 +63,8 @@ private data class RequestParametersFromSurrogate<T : RequestParameters>(
     val callingPackageName: String? = null,
     @SerialName(CALLING_ORIGIN)
     val callingOrigin: String? = null,
+    @SerialName(DECRYPTED_FROM)
+    val decryptedFrom: JweHeader? = null,
 ) {
     constructor(value: RequestParametersFrom<T>) : this(
         parameters = value.parameters,
@@ -91,6 +95,7 @@ private data class RequestParametersFromSurrogate<T : RequestParameters>(
         credentialIds = (value as? RequestParametersFrom.DcApiRequest)?.credentialIds,
         callingPackageName = (value as? RequestParametersFrom.DcApiRequest)?.callingPackageName,
         callingOrigin = (value as? RequestParametersFrom.DcApiRequest)?.callingOrigin,
+        decryptedFrom = value.decryptedFrom,
     )
 
     fun toRequestParametersFrom(): RequestParametersFrom<T> = when {
@@ -135,6 +140,7 @@ private data class RequestParametersFromSurrogate<T : RequestParameters>(
                 jsonString = jsonString,
                 parameters = parameters,
                 parent = parent,
+                decryptedFrom = decryptedFrom,
             )
 
         jws != null ->
@@ -142,6 +148,7 @@ private data class RequestParametersFromSurrogate<T : RequestParameters>(
                 jws = jws,
                 parameters = parameters,
                 parent = parent,
+                decryptedFrom = decryptedFrom,
             )
 
         url != null ->

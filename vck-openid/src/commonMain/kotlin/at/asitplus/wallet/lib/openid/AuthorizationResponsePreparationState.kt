@@ -31,4 +31,8 @@ data class AuthorizationResponsePreparationState(
     val responseRequiresEncryption: Boolean
         get() = request.parameters.responseMode?.requiresEncryption == true
 
+    /** Whether the authn request arrived encrypted for a key from `wallet_metadata`, see OpenID4VP 1.0, 5.10. */
+    val requestWasEncrypted: Boolean
+        get() = request.decryptedFrom != null
+
 }

@@ -4,6 +4,9 @@ import at.asitplus.dif.DifInputDescriptor
 import at.asitplus.openid.AuthenticationRequestParameters
 import at.asitplus.openid.JarRequestParameters
 import at.asitplus.openid.RequestParametersFrom
+import at.asitplus.signum.indispensable.josef.JweAlgorithm
+import at.asitplus.signum.indispensable.josef.JweEncryption
+import at.asitplus.signum.indispensable.josef.JweHeader
 import at.asitplus.signum.indispensable.josef.JwsTyped
 import at.asitplus.signum.indispensable.josef.io.joseCompliantSerializer
 import at.asitplus.signum.indispensable.josef.toJwsFlattened
@@ -18,6 +21,7 @@ import at.asitplus.wallet.lib.oidvci.decodeFromUrlQuery
 import com.benasher44.uuid.uuid4
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
 import io.kotest.matchers.types.shouldBeInstanceOf
 import io.ktor.http.*
@@ -158,5 +162,42 @@ val AuthenticationRequestParameterFromSerializerTest by matrixSuite {
             joseCompliantSerializer.decodeFromString<RequestParametersFrom<AuthenticationRequestParameters>>(serialized)
                 .shouldBe(params)
         }
+    }
+
+    // the JWE header a request was decrypted from, see OpenID4VP 1.0, 5.10, has to survive persisting the state
+    "decryptedFrom survives a round trip" {
+        val authnRequestUrl = verifierOid4vp.createAuthnRequest(
+            OpenId4VpRequestOptions(
+                presentationRequest = CredentialPresentationRequestBuilder(
+                    RequestOptionsCredential(ConstantIndex.AtomicAttribute2023, PLAIN_JWT)
+                ).toDCQLRequest()
+            ),
+            CreationOptions.SignedRequestByValue(walletUrl)
+        ).getOrThrow().url
+        val serializedRequest =
+            Url(authnRequestUrl).encodedQuery.decodeFromUrlQuery<JarRequestParameters>().request.shouldNotBeNull()
+
+        val params = RequestParametersFrom.Jws<AuthenticationRequestParameters>(
+            jws = JwsTyped<AuthenticationRequestParameters>(serializedRequest).jws,
+            parameters = JwsTyped<AuthenticationRequestParameters>(serializedRequest).payload,
+            decryptedFrom = JweHeader(
+                algorithm = JweAlgorithm.ECDH_ES,
+                encryption = JweEncryption.A128GCM,
+                keyId = "some-key-id",
+            ),
+        )
+
+        val serialized =
+            joseCompliantSerializer.encodeToString<RequestParametersFrom<AuthenticationRequestParameters>>(params)
+        serialized shouldContain "decryptedFrom"
+        joseCompliantSerializer.decodeFromString<RequestParametersFrom<AuthenticationRequestParameters>>(serialized)
+            .shouldBe(params)
+
+        // state persisted before this field existed still parses, and reports "not encrypted"
+        joseCompliantSerializer.decodeFromString<RequestParametersFrom<AuthenticationRequestParameters>>(
+            joseCompliantSerializer.encodeToString<RequestParametersFrom<AuthenticationRequestParameters>>(
+                params.copy(decryptedFrom = null)
+            )
+        ).decryptedFrom shouldBe null
     }
 }

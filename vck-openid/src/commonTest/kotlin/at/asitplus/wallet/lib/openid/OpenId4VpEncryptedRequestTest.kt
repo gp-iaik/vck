@@ -16,6 +16,7 @@ import at.asitplus.wallet.lib.data.ConstantIndex
 import at.asitplus.wallet.lib.jws.EncryptJwe
 import at.asitplus.wallet.lib.openid.DummyCredentialDataProvider.issueAndStorePlainJwt
 import com.benasher44.uuid.uuid4
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
@@ -54,11 +55,13 @@ val OpenId4VpEncryptedRequestTest by matrixSuite {
                 var served: String? = null
                 fun holder(
                     ephemeralEncryptionKeyService: EphemeralEncryptionKeyService?,
+                    requireEncryptedRequests: Boolean = false,
                     serve: suspend (at.asitplus.openid.RequestObjectParameters?) -> String,
                 ) = OpenId4VpHolder(
                     holder = holderAgent,
                     randomSource = RandomSource.Default,
                     ephemeralEncryptionKeyService = ephemeralEncryptionKeyService,
+                    requireEncryptedRequests = requireEncryptedRequests,
                     remoteResourceRetriever = { input ->
                         if (input.url == requestUrl)
                             serve(input.requestObjectParameters).also { served = it }
@@ -264,6 +267,91 @@ val OpenId4VpEncryptedRequestTest by matrixSuite {
                 .vpTokenValidationResult.shouldNotBeNull().getOrThrow()
 
             params shouldBe null
+        }
+
+        "plain request object from the POST fetch is rejected when we require encryption" { f ->
+            val (url, jar) = f.verifierOid4vp.createAuthnRequest(
+                f.requestOptions,
+                CreationOptions.SignedRequestByReference(
+                    f.walletUrl, f.requestUrl, JarRequestParameters.RequestUriMethod.POST
+                )
+            ).getOrThrow()
+            jar.shouldNotBeNull()
+
+            // drop the wallet's metadata, so that the verifier has no key to encrypt to
+            val holder = f.holder(EphemeralEncryptionKeyService(), requireEncryptedRequests = true) {
+                jar.invoke(it?.copy(walletMetadataString = null)).getOrThrow()
+            }
+
+            holder.createAuthnResponse(url).isFailure shouldBe true
+        }
+
+        "GET flow is still accepted when we require encryption" { f ->
+            val (url, jar) = f.verifierOid4vp.createAuthnRequest(
+                f.requestOptions,
+                CreationOptions.SignedRequestByReference(
+                    f.walletUrl, f.requestUrl, JarRequestParameters.RequestUriMethod.GET
+                )
+            ).getOrThrow()
+            jar.shouldNotBeNull()
+
+            // deliberate limit: a GET fetch never advertises a key, so there is nothing to require, see OpenID4VP 5.10
+            val holder = f.holder(EphemeralEncryptionKeyService(), requireEncryptedRequests = true) {
+                jar.invoke(it).getOrThrow()
+            }
+
+            holder.createAuthnResponse(url).getOrThrow()
+                .shouldBeInstanceOf<AuthenticationResponseResult.Redirect>()
+                .let { f.verifierOid4vp.validateAuthnResponse(it.url).getOrThrow() }
+                .vpTokenValidationResult.shouldNotBeNull().getOrThrow()
+        }
+
+        "requiring encryption needs a key service to advertise a key with" { f ->
+            shouldThrow<IllegalArgumentException> {
+                OpenId4VpHolder(
+                    holder = f.holderAgent,
+                    randomSource = RandomSource.Default,
+                    ephemeralEncryptionKeyService = null,
+                    requireEncryptedRequests = true,
+                )
+            }
+        }
+
+        "the decrypted request records the JWE header it came from" { f ->
+            val (url, jar) = f.verifierOid4vp.createAuthnRequest(
+                f.requestOptions,
+                CreationOptions.SignedRequestByReference(
+                    f.walletUrl, f.requestUrl, JarRequestParameters.RequestUriMethod.POST
+                )
+            ).getOrThrow()
+            jar.shouldNotBeNull()
+
+            val holder = f.holder(EphemeralEncryptionKeyService()) { jar.invoke(it).getOrThrow() }
+
+            holder.startAuthorizationResponsePreparation(url).getOrThrow().apply {
+                requestWasEncrypted shouldBe true
+                request.decryptedFrom.shouldNotBeNull().apply {
+                    algorithm shouldBe JweAlgorithm.ECDH_ES
+                    encryption shouldBe JweEncryption.A128GCM
+                }
+            }
+        }
+
+        "a plain request records no JWE header" { f ->
+            val (url, jar) = f.verifierOid4vp.createAuthnRequest(
+                f.requestOptions,
+                CreationOptions.SignedRequestByReference(
+                    f.walletUrl, f.requestUrl, JarRequestParameters.RequestUriMethod.POST
+                )
+            ).getOrThrow()
+            jar.shouldNotBeNull()
+
+            val holder = f.holder(null) { jar.invoke(it).getOrThrow() }
+
+            holder.startAuthorizationResponsePreparation(url).getOrThrow().apply {
+                requestWasEncrypted shouldBe false
+                request.decryptedFrom shouldBe null
+            }
         }
 
         "wallet metadata carries exactly one encryption key, fresh for every request" { f ->

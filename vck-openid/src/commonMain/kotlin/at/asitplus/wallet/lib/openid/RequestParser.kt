@@ -5,11 +5,11 @@ import at.asitplus.catching
 import at.asitplus.catchingUnwrapped
 import at.asitplus.openid.AuthenticationRequestParameters
 import at.asitplus.openid.JarRequestParameters
-import at.asitplus.openid.OpenIdConstants
 import at.asitplus.openid.RequestObjectParameters
 import at.asitplus.openid.RequestParameters
 import at.asitplus.openid.RequestParametersFrom
 import at.asitplus.signum.indispensable.josef.JweEncrypted
+import at.asitplus.signum.indispensable.josef.JweHeader
 import at.asitplus.signum.indispensable.josef.JwsCompactTyped
 import at.asitplus.signum.indispensable.josef.io.joseCompliantSerializer
 import at.asitplus.wallet.lib.RemoteResourceRetrieverFunction
@@ -38,14 +38,19 @@ class RequestParser(
     private val remoteResourceRetriever: RemoteResourceRetrieverFunction = { null },
     @Deprecated("No longer used, decision moved to `AuthorizationRequestValidator`")
     private val requestObjectJwsVerifier: RequestObjectJwsVerifier = RequestObjectJwsVerifier { _: Any -> true },
-    /**
-     * Holds the ephemeral encryption keys advertised in `wallet_metadata` when fetching a request object with
-     * `request_uri_method=post`, see [OpenId4VpHolder]. Leave `null` to reject encrypted request objects.
-     */
+    /** Holds the ephemeral encryption keys advertised in `wallet_metadata` when fetching a request object with POST. */
     private val ephemeralEncryptionKeyService: EphemeralEncryptionKeyService? = null,
     /** Decrypts request objects sent by the verifier, keyed by the `kid` of the JWE. */
     private val decryptRequestObject: DecryptJweFun? =
         ephemeralEncryptionKeyService?.let { DecryptJweWithEphemeralKey(it) },
+    /**
+     * Set to reject a plain request object served at a `request_uri` we have fetched with POST, i.e. the one flow in
+     * which we advertised an encryption key, see [OpenId4VpHolder]. Requests that never gave the verifier a key to
+     * encrypt to at all, i.e. `request` by value, `request_uri_method=get`, and plain requests carrying their
+     * parameters in the URL, are still accepted: callers wanting those rejected too can do so themselves, by looking
+     * at [RequestParametersFrom.decryptedFrom].
+     */
+    private val requireEncryptedRequests: Boolean = false,
     /**
      * Callback to load [RequestObjectParameters] when loading a request object by reference (e.g. from `request_uri`)
      */
@@ -86,9 +91,10 @@ class RequestParser(
 
     private fun String.parseFromJson(
         parent: RequestParametersFrom<out RequestParameters>?,
+        decryptedFrom: JweHeader? = null,
     ): RequestParametersFrom<*>? = catchingUnwrapped {
         val params = joseCompliantSerializer.decodeFromString(RequestParameters.serializer(), this)
-        RequestParametersFrom.Json(this, params, (parent as? RequestParametersFrom.Uri)?.url)
+        RequestParametersFrom.Json(this, params, (parent as? RequestParametersFrom.Uri)?.url, decryptedFrom)
     }.getOrNull()
 
     suspend fun extractRequest(
@@ -103,7 +109,13 @@ class RequestParser(
         // is built once per request, since it carries the key the verifier shall encrypt this very request to
         val requestObjectParameters = if (method == HttpMethod.Post) buildRequestObjectParameters.invoke() else null
         remoteResourceRetriever.invoke(parameters.resourceRetrieverInput(uri, method, requestObjectParameters))?.let {
-            (it.parseAsJweRequest(parent, requestObjectParameters.expectedEncryptionKeyId())
+            val expectedKeyId = requestObjectParameters.expectedEncryptionKeyId()
+            val fromJwe = it.parseAsJweRequest(parent, expectedKeyId)
+            // a non-null `expectedKeyId` means we advertised a key in `wallet_metadata`, i.e. this was the POST fetch,
+            // the only flow in which the verifier had the chance to encrypt at all
+            if (fromJwe == null && requireEncryptedRequests && expectedKeyId != null)
+                throw InvalidRequest("request object from $uri is not encrypted, but we require encryption")
+            (fromJwe
                 ?: it.parseAsJwsRequest(parent)
                 ?: it.parseFromJson(parent)
                 ?: throw InvalidRequest("request_uri content not a valid request object: $uri"))
@@ -116,7 +128,7 @@ class RequestParser(
         this?.walletMetadata?.jsonWebKeySet?.keys?.getEncryptionTargetKey()?.keyId
 
     /**
-     * Per [OpenID4VP 1.0, 5.10.1](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#name-request-uri-response):
+     * Per OpenID4VP 1.0, 5.10.1:
      * If we passed a `wallet_nonce` when fetching the request object, it MUST come back in the request object,
      * otherwise we MUST terminate request processing.
      */
@@ -140,20 +152,21 @@ class RequestParser(
 
     private suspend fun String.parseAsJwsRequest(
         parent: RequestParametersFrom<out RequestParameters>?,
+        decryptedFrom: JweHeader? = null,
     ): RequestParametersFrom<*>? =
         catching { JwsCompactTyped<RequestParameters>(this) }
             .getOrNull()?.let { jws ->
                 RequestParametersFrom.Jws(
                     jws = jws.jws,
                     parameters = jws.payload,
-                    parent = (parent as? RequestParametersFrom.Uri)?.url
+                    parent = (parent as? RequestParametersFrom.Uri)?.url,
+                    decryptedFrom = decryptedFrom,
                 )
             }
 
     /**
      * Decrypts a request object encrypted to the key we have advertised in `wallet_metadata`, as per
-     * [OpenID4VP 1.0, 5.10](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#name-request-uri-method-post),
-     * and parses the plaintext, which is a signed or plain request object.
+     * OpenID4VP 1.0, 5.10 and parses the plaintext, which is a signed or plain request object.
      *
      * Returns `null` if this is not a JWE at all, and throws if it is one that we can't or shouldn't decrypt.
      */
@@ -172,8 +185,8 @@ class RequestParser(
         val decrypted = decryptRequestObject.invoke(jwe).getOrElse {
             throw InvalidRequest("Decryption of request object failed", it)
         }
-        return decrypted.payload.parseAsJwsRequest(parent)
-            ?: decrypted.payload.parseFromJson(parent)
+        return decrypted.payload.parseAsJwsRequest(parent, jwe.header)
+            ?: decrypted.payload.parseFromJson(parent, jwe.header)
             ?: throw InvalidRequest("Decrypted request object is not a valid request object")
     }
 

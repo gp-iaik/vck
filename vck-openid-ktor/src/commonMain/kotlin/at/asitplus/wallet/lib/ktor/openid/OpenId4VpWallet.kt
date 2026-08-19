@@ -60,6 +60,8 @@ class OpenId4VpWallet(
     relyingPartyTrust: Set<RelyingPartyTrust>? = null,
     /** Set to accept encrypted authorization requests, to be passed on to [OpenId4VpHolder]. */
     ephemeralEncryptionKeyService: EphemeralEncryptionKeyService? = null,
+    /** Set to reject plain request objects fetched with POST, to be passed on to [OpenId4VpHolder]. */
+    requireEncryptedRequests: Boolean = false,
 ) {
 
     sealed interface AuthenticationResult
@@ -108,6 +110,7 @@ class OpenId4VpWallet(
         relyingPartyTrust = relyingPartyTrust,
         allowedDcApiOriginSchemes = allowedDcApiOriginSchemes,
         ephemeralEncryptionKeyService = ephemeralEncryptionKeyService,
+        requireEncryptedRequests = requireEncryptedRequests,
     )
 
     val iso180137AnnexCHolder = Iso180137AnnexCHolder(

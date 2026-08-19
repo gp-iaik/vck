@@ -4,6 +4,7 @@ import at.asitplus.dcapi.request.ExchangeProtocolIdentifier
 import at.asitplus.dcapi.request.IsoMdocRequest
 import at.asitplus.signum.indispensable.io.TransformingSerializerTemplate
 import at.asitplus.signum.indispensable.josef.JWS
+import at.asitplus.signum.indispensable.josef.JweHeader
 import at.asitplus.signum.indispensable.josef.JwsCompactStringSerializer
 import at.asitplus.signum.indispensable.josef.JwsCompactTyped
 import at.asitplus.signum.indispensable.josef.JwsGeneral
@@ -25,6 +26,9 @@ import kotlin.jvm.JvmOverloads
 sealed class RequestParametersFrom<S : RequestParameters> {
 
     abstract val parameters: S
+
+    /** JWE header this request was decrypted from, or `null` if it did not arrive encrypted, see OpenID4VP 1.0, 5.10 */
+    open val decryptedFrom: JweHeader? get() = null
 
     /**
      * Common ancestor for request parameters that are represented with a JWS signature
@@ -48,7 +52,6 @@ sealed class RequestParametersFrom<S : RequestParameters> {
 
         @SerialName(SerialNames.CALLING_ORIGIN)
         val callingOrigin: String
-
         val protocol: ExchangeProtocolIdentifier
 
         object SerialNames {
@@ -67,6 +70,8 @@ sealed class RequestParametersFrom<S : RequestParameters> {
         override val parameters: T,
         @SerialName(SerialNames.PARENT)
         val parent: Url? = null,
+        @SerialName(SerialNames.DECRYPTED_FROM)
+        override val decryptedFrom: JweHeader? = null,
     ) : RequestParametersSigned<T>() {
         override val jwsTyped get() = JwsTyped(jws, parameters)
     }
@@ -196,6 +201,8 @@ sealed class RequestParametersFrom<S : RequestParameters> {
         override val parameters: T,
         @SerialName(SerialNames.PARENT)
         val parent: Url? = null,
+        @SerialName(SerialNames.DECRYPTED_FROM)
+        override val decryptedFrom: JweHeader? = null,
     ) : RequestParametersFrom<T>()
 
     object SerialNames {
@@ -212,6 +219,7 @@ sealed class RequestParametersFrom<S : RequestParameters> {
         const val URL = "url"
         const val PARENT = "parent"
         const val PARAMETERS = "parameters"
+        const val DECRYPTED_FROM = "decryptedFrom"
     }
 
 }
