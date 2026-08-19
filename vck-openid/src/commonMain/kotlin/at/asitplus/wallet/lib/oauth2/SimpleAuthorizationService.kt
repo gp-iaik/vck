@@ -6,15 +6,18 @@ import at.asitplus.catchingUnwrapped
 import at.asitplus.iso.sha256
 import at.asitplus.openid.AttestationChallengeResponse
 import at.asitplus.openid.AuthenticationRequestParameters
+import at.asitplus.openid.AuthorizationDetails
 import at.asitplus.openid.AuthenticationResponseParameters
 import at.asitplus.openid.CredentialOffer
 import at.asitplus.openid.CredentialOfferGrants
 import at.asitplus.openid.CredentialOfferGrantsAuthCode
 import at.asitplus.openid.CredentialOfferGrantsPreAuthCode
+import at.asitplus.openid.CredentialOfferGrantsPreAuthCodeTransactionCode
 import at.asitplus.openid.CredentialOfferUrlParameters
 import at.asitplus.openid.JarRequestParameters
 import at.asitplus.openid.OAuth2AuthorizationServerMetadata
 import at.asitplus.openid.OidcUserInfoExtended
+import at.asitplus.openid.OpenIdAuthorizationDetails
 import at.asitplus.openid.OpenIdConstants
 import at.asitplus.openid.PushedAuthenticationResponseParameters
 import at.asitplus.openid.RequestObjectParameters
@@ -278,27 +281,48 @@ class SimpleAuthorizationService @JvmOverloads constructor(
      * @param credentialIssuer the public context of an [CredentialIssuer]
      * @param schemes which credential configuration IDs to use in the offer.
      * Pass an empty set to offer all known schemes.
+     * @param transactionCode OID4VCI transaction code the user has to enter in the wallet app, to be transmitted to
+     * them out-of-band. Recommended, since anyone who reads the offer (e.g. by photographing the QR code) can
+     * otherwise redeem the pre-authorized code.
+     * @param transactionCodeDescriptor describes [transactionCode] to the wallet app, so it can render an input screen
      */
     suspend fun offerWithPreAuthnForUserForSchemes(
         user: OidcUserInfoExtended,
         credentialIssuer: String,
         schemes: Set<Pair<CredentialScheme, CredentialRepresentation>> = emptySet(),
-    ): CredentialOffer = buildOfferWithPreAuthnForUser(
-        user = user,
-        credentialIssuer = credentialIssuer,
-        configurationIds = strategy.toCredentialConfigurationIds(schemes),
-    )
+        transactionCode: String? = null,
+        transactionCodeDescriptor: CredentialOfferGrantsPreAuthCodeTransactionCode? =
+            transactionCode?.let { CredentialOfferGrantsPreAuthCodeTransactionCode(length = it.length) },
+    ): CredentialOffer {
+        require((transactionCode == null) == (transactionCodeDescriptor == null)) {
+            "transactionCode and transactionCodeDescriptor must either both be set or both be null"
+        }
+        return buildOfferWithPreAuthnForUser(
+            user = user,
+            credentialIssuer = credentialIssuer,
+            configurationIds = strategy.toCredentialConfigurationIds(schemes),
+            transactionCode = transactionCode,
+            transactionCodeDescriptor = transactionCodeDescriptor,
+        )
+    }
 
     private suspend fun buildOfferWithPreAuthnForUser(
         user: OidcUserInfoExtended,
         credentialIssuer: String,
         configurationIds: Collection<String>,
+        transactionCode: String? = null,
+        transactionCodeDescriptor: CredentialOfferGrantsPreAuthCodeTransactionCode? = null,
     ): CredentialOffer = CredentialOffer(
         credentialIssuer = credentialIssuer,
         configurationIds = configurationIds.toSet(),
         grants = CredentialOfferGrants(
             preAuthorizedCode = CredentialOfferGrantsPreAuthCode(
-                preAuthorizedCode = providePreAuthorizedCode(user),
+                preAuthorizedCode = providePreAuthorizedCode(
+                    userInfo = user,
+                    configurationIds = configurationIds.toSet(),
+                    transactionCode = transactionCode,
+                ),
+                transactionCode = transactionCodeDescriptor,
                 authorizationServer = publicContext
             )
         )
@@ -557,6 +581,25 @@ class SimpleAuthorizationService @JvmOverloads constructor(
                 throw InvalidGrant("client_id does not match authorization code")
         }
 
+        if (request.grantType == OpenIdConstants.GRANT_TYPE_PRE_AUTHORIZED_CODE) {
+            when {
+                clientAuthRequest.transactionCode == null && request.transactionCode != null ->
+                    throw InvalidRequest("tx_code was not expected")
+
+                clientAuthRequest.transactionCode != null && request.transactionCode == null ->
+                    throw InvalidRequest("tx_code required by the credential offer")
+
+                clientAuthRequest.transactionCode != request.transactionCode ->
+                    throw InvalidGrant("tx_code not matching the one from the credential offer")
+            }
+
+            val preAuthorizedCode = request.preAuthorizedCode
+                ?: throw InvalidGrant("pre-authorized code not valid: ${request.preAuthorizedCode}")
+            if (!preAuthorizedCodeService.verifyAndRemove(preAuthorizedCode))
+                throw InvalidGrant("pre-authorized code not valid: $preAuthorizedCode")
+            codeToClientAuthRequest.remove(preAuthorizedCode)
+        }
+
         if (request.grantType == OpenIdConstants.GRANT_TYPE_AUTHORIZATION_CODE) {
             validateCodeChallenge(
                 code = request.code
@@ -647,6 +690,10 @@ class SimpleAuthorizationService @JvmOverloads constructor(
         val granted = clientAuthnRequest.scope.split(" ").filter(String::isNotBlank).toSet()
         if (!granted.containsAll(requested))
             throw InvalidRequest("Not all scopes from auth code: $requested")
+        clientAuthnRequest.configurationIds?.let { configurationIds ->
+            if (!strategy.validateScope(scope!!, configurationIds))
+                throw InvalidScope("Scope not from credential offer: $scope")
+        }
         return scope
     }
 
@@ -662,10 +709,10 @@ class SimpleAuthorizationService @JvmOverloads constructor(
         }
 
         OpenIdConstants.GRANT_TYPE_PRE_AUTHORIZED_CODE -> {
-            if (preAuthorizedCode == null || !preAuthorizedCodeService.verifyAndRemove(preAuthorizedCode!!)) {
+            if (preAuthorizedCode == null) {
                 throw InvalidGrant("pre-authorized code not valid: $preAuthorizedCode")
             }
-            preAuthorizedCode?.let { codeToClientAuthRequest.remove(it) }
+            preAuthorizedCode?.let { codeToClientAuthRequest.get(it) }
         }
 
         OpenIdConstants.GRANT_TYPE_REFRESH_TOKEN -> {
@@ -679,8 +726,17 @@ class SimpleAuthorizationService @JvmOverloads constructor(
         else -> throw InvalidRequest("grant_type invalid")
     }
 
+    /**
+     * @param configurationIds restrict the code to these credential configuration IDs, i.e. the ones from the
+     * credential offer it belongs to. Pass `null` to grant everything [strategy] supports.
+     * @param transactionCode the client has to present this value in the token request, see
+     * [offerWithPreAuthnForUserForSchemes]
+     */
+    @JvmOverloads
     suspend fun providePreAuthorizedCode(
         userInfo: OidcUserInfoExtended,
+        configurationIds: Set<String>? = null,
+        transactionCode: String? = null,
     ): String = preAuthorizedCodeService.provideCode().also {
         codeToClientAuthRequest.put(
             it,
@@ -688,10 +744,20 @@ class SimpleAuthorizationService @JvmOverloads constructor(
                 issuedCode = it,
                 userInfo = userInfo,
                 scope = strategy.validScopes(),
-                authnDetails = strategy.validAuthorizationDetails(publicContext),
+                authnDetails = strategy.validAuthorizationDetails(publicContext)
+                    .filterForConfigurationIds(configurationIds),
+                configurationIds = configurationIds,
+                transactionCode = transactionCode,
             )
         )
     }
+
+    /** Keeps only the authorization details for [configurationIds], i.e. the ones the credential offer contained. */
+    private fun Collection<AuthorizationDetails>.filterForConfigurationIds(
+        configurationIds: Set<String>?,
+    ): Collection<AuthorizationDetails> = configurationIds?.let { ids ->
+        filter { it !is OpenIdAuthorizationDetails || it.credentialConfigurationId in ids }
+    } ?: this
 
     /**
      * Returns the user info associated with this access token, when the token in [authorizationHeader] is correct.
