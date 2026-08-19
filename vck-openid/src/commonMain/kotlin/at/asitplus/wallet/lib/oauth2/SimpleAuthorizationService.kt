@@ -770,11 +770,23 @@ class SimpleAuthorizationService @JvmOverloads constructor(
         this?.dpop?.let { tokenService.verification.extractValidatedClientKey(this).getOrThrow() }
 }
 
+/**
+ * Implements [RFC 9449 8.2.](https://datatracker.ietf.org/doc/html/rfc9449#name-providing-a-new-nonce-value):
+ * Authorization servers may include a fresh DPoP nonce by including values in HTTP 200 responses
+ */
 data class ResponseWithDpopNonce<T>(
     val response: T,
+    /** Set as HTTP header `DPoP-Nonce` in the response, see [HttpHeaders.DPoPNonce] */
     val dpopNonce: String?,
 )
 
+/**
+ * Internal class used to store pushed authorization requests created for clients in
+ * [SimpleAuthorizationService.requestUriToPushedAuthorizationRequest],
+ * which are referenced by a `request_uri` and fetched later on in the process.
+ *
+ * Needs to be public to allow for implementations of [MapStore] with this type.
+ */
 data class PushedAuthorizationRequest(
     val request: AuthenticationRequestParameters,
     val clientBinding: ClientBinding

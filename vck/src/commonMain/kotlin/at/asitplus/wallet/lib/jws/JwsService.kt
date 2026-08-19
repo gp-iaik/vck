@@ -457,6 +457,8 @@ class DecryptJwe(
 /**
  * Decrypts JWE payloads with the ephemeral key referenced by the JWE's `kid` header, as per
  * [OpenID4VP 1.0, 8.3](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#name-encrypted-responses).
+ *
+ * *Note that this function only loads the key but does not consume it from [ephemeralEncryptionKeyService]!*
  */
 class DecryptJweWithEphemeralKey(
     private val ephemeralEncryptionKeyService: EphemeralEncryptionKeyService,
