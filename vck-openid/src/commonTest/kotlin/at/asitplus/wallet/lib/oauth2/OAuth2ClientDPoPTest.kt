@@ -49,6 +49,7 @@ val OAuth2ClientDPoPTest by matrixSuite {
                 requirePushedAuthorizationRequests = false,
                 strategy = DummyAuthorizationServiceStrategy(scope),
                 tokenService = tokenService,
+                supportTokenExchange = true,
             )
             val clientKey = EphemeralKeyWithoutCert()
             val signDpop = SignJwt<JsonWebToken>(clientKey, JwsHeaderCertOrJwk())

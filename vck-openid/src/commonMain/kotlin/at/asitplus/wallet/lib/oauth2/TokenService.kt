@@ -28,6 +28,15 @@ interface TokenService {
     val supportsRefreshTokens: Boolean
 
     /**
+     * Whether this service can bind a token presented as [TokenRequestParameters.subjectToken] to the client
+     * presenting it, i.e. whether [validateAccessToken] proves possession of the key that token is bound to.
+     *
+     * Implementations that can not (e.g. bearer tokens) must leave this `false`: exchanging such a token would let
+     * anyone who captured it obtain a fresh access token, and repeat that indefinitely.
+     */
+    val supportsTokenExchange: Boolean get() = false
+
+    /**
      * Validates the access token from [authorizationHeader] and returns what it authorizes.
      * Implementations that issued the token themselves also fill [ValidatedAccessToken.userInfoExtended],
      * so callers do not need a second lookup with [readUserInfo].

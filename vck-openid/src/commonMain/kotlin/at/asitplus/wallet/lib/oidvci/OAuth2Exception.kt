@@ -16,6 +16,7 @@ import at.asitplus.openid.OpenIdConstants.Errors.INVALID_SCOPE
 import at.asitplus.openid.OpenIdConstants.Errors.INVALID_TOKEN
 import at.asitplus.openid.OpenIdConstants.Errors.REGISTRATION_VALUE_NOT_SUPPORTED
 import at.asitplus.openid.OpenIdConstants.Errors.UNKNOWN_CREDENTIAL_CONFIGURATION
+import at.asitplus.openid.OpenIdConstants.Errors.UNSUPPORTED_GRANT_TYPE
 import at.asitplus.openid.OpenIdConstants.Errors.UNKNOWN_CREDENTIAL_IDENTIFIER
 import at.asitplus.openid.OpenIdConstants.Errors.USER_CANCELLED
 import at.asitplus.openid.OpenIdConstants.Errors.USE_ATTESTATION_CHALLENGE
@@ -69,6 +70,16 @@ sealed class OAuth2Exception(
         @Transient val description: String? = null,
         @Transient override val cause: Throwable? = null
     ) : OAuth2Exception(INVALID_GRANT, description)
+
+    /**
+     * [RFC 6749 5.2](https://datatracker.ietf.org/doc/html/rfc6749#section-5.2): The authorization grant type is
+     * not supported by the authorization server.
+     */
+    @Serializable
+    class UnsupportedGrantType(
+        @Transient val description: String? = null,
+        @Transient override val cause: Throwable? = null
+    ) : OAuth2Exception(UNSUPPORTED_GRANT_TYPE, description)
 
     @Serializable
     class InvalidCode(

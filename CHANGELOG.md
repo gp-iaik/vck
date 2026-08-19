@@ -92,6 +92,8 @@ Release 8.0.0 (unreleased):
     - Require PKCE with `code_challenge_method=S256` on every authorization request, as mandated by OpenID4VC HAIP, and advertise it in `code_challenge_methods_supported`
     - Make `CodeService.provideCode()` and `CodeService.verifyAndRemove()` suspending functions, and implement `DefaultCodeService` on top of `NonceService`, so codes are stored thread-safely and expire.
     - Keep authorization codes, pre-authorized codes and `issuer_state` values in separate stores in `SimpleAuthorizationService`
+    - Make [OAuth 2.0 Token Exchange](https://datatracker.ietf.org/doc/html/rfc8693) opt-in with the new `supportTokenExchange` constructor argument of `SimpleAuthorizationService`, defaulting to `false`, and only advertise the grant in `grant_types_supported` when it is enabled.
+    - Add `OAuth2Exception.UnsupportedGrantType` for the `unsupported_grant_type` error of [RFC 6749](https://datatracker.ietf.org/doc/html/rfc6749#section-5.2)
 - Deprecations:
     - Remove code deprecated in 7.0.0, e.g. various `Iso180137AnnexC*` and related classes
     - Deprecate all classes used for Presentation Exchange requests and so on, e.g., `CredentialPresentationRequest.PresentationExchangeRequest` or `PresentationExchangeCredentialDisclosure` or `CredentialPresentation.PresentationExchangePresentation`

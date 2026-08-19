@@ -154,6 +154,11 @@ class SimpleAuthorizationService @JvmOverloads constructor(
     private val issuerStateService: CodeService = DefaultCodeService(),
     /** Used to create and verify pre-authorized codes, see [providePreAuthorizedCode]. */
     private val preAuthorizedCodeService: CodeService = DefaultCodeService(),
+    /**
+     * Whether to support Token Exchange, i.e. issuing a fresh access token for a token presented as `subject_token`.
+     * Requires [tokenService] with support for it.
+     */
+    private val supportTokenExchange: Boolean = false,
 ) : OAuth2AuthorizationServerAdapter, AuthorizationService {
 
     init {
@@ -162,6 +167,11 @@ class SimpleAuthorizationService @JvmOverloads constructor(
             && tokenService.dpopSigningAlgValuesSupportedStrings.orEmpty().isEmpty()
         ) {
             throw IllegalArgumentException("Client authn DPoP combined mode requires Token Service with DPoP support")
+        }
+        if (supportTokenExchange && !tokenService.supportsTokenExchange) {
+            throw IllegalArgumentException(
+                "Token exchange requires a Token Service that binds the subject token to the presenting client"
+            )
         }
     }
 
@@ -196,7 +206,7 @@ class SimpleAuthorizationService @JvmOverloads constructor(
             grantTypesSupported = setOfNotNull(
                 OpenIdConstants.GRANT_TYPE_AUTHORIZATION_CODE,
                 OpenIdConstants.GRANT_TYPE_PRE_AUTHORIZED_CODE,
-                OpenIdConstants.GRANT_TYPE_TOKEN_EXCHANGE,
+                if (supportTokenExchange) OpenIdConstants.GRANT_TYPE_TOKEN_EXCHANGE else null,
                 if (tokenService.supportsRefreshTokens) OpenIdConstants.GRANT_TYPE_REFRESH_TOKEN else null,
             )
         )
@@ -525,6 +535,8 @@ class SimpleAuthorizationService @JvmOverloads constructor(
             ?: throw InvalidGrant("client_id not set")
 
         if (request.grantType == OpenIdConstants.GRANT_TYPE_TOKEN_EXCHANGE) {
+            if (!supportTokenExchange)
+                throw UnsupportedGrantType("token exchange not supported")
             val userInfoEndpoint = metadata().userInfoEndpoint
                 ?: throw InvalidGrant("token_exchange requires userInfoEndpoint")
             return@catching tokenService.tokenExchange(

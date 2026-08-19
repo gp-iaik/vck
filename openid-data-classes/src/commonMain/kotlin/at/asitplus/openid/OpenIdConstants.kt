@@ -507,6 +507,12 @@ object OpenIdConstants {
         /** Invalid grant: `invalid_grant`. */
         const val INVALID_GRANT = "invalid_grant"
 
+        /**
+         * [RFC 6749 5.2](https://datatracker.ietf.org/doc/html/rfc6749#section-5.2): The authorization grant type
+         * is not supported by the authorization server.
+         */
+        const val UNSUPPORTED_GRANT_TYPE = "unsupported_grant_type"
+
         /** OpenID4VP: Wallet did not have requested credentials: `access_denied */
         const val ACCESS_DENIED = "access_denied"
 
