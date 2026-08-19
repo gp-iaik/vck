@@ -19,6 +19,7 @@ import at.asitplus.wallet.lib.data.MediaTypes
 import at.asitplus.wallet.lib.extensions.getEncryptionTargetKey
 import at.asitplus.wallet.lib.jws.DecryptJweFun
 import at.asitplus.wallet.lib.jws.DecryptJweWithEphemeralKey
+import at.asitplus.wallet.lib.jws.JwsContentTypeConstants
 import at.asitplus.wallet.lib.oidc.RequestObjectJwsVerifier
 import at.asitplus.wallet.lib.oidvci.OAuth2Exception.InvalidRequest
 import at.asitplus.wallet.lib.oidvci.decodeFromUrlQuery
@@ -101,8 +102,11 @@ class RequestParser(
         parameters: JarRequestParameters,
         parent: RequestParametersFrom<out RequestParameters>?,
     ): RequestParametersFrom<*>? = parameters.request?.let {
+        // no JSON fallback: RFC 9101, 4 admits only a signed, or a signed and encrypted, request object. Throwing
+        // rather than returning null keeps this arm parallel to the `request_uri` one below, and reports the actual
+        // problem instead of letting the elvis fall through to a request that is missing every parameter
         it.parseAsJwsRequest(parent)
-            ?: it.parseFromJson(parent)
+            ?: throw InvalidRequest("request content not a valid request object")
     } ?: parameters.requestUri?.let { uri ->
         val method = parameters.requestUriMethod?.toHttpMethod() ?: HttpMethod.Get
         // only the POST request to the request URI endpoint has a channel for these, see OpenID4VP 1.0, 5.10, and it
@@ -117,7 +121,6 @@ class RequestParser(
                 throw InvalidRequest("request object from $uri is not encrypted, but we require encryption")
             (fromJwe
                 ?: it.parseAsJwsRequest(parent)
-                ?: it.parseFromJson(parent)
                 ?: throw InvalidRequest("request_uri content not a valid request object: $uri"))
                 .also { request -> request.requireWalletNonce(requestObjectParameters?.walletNonce) }
         }
@@ -156,6 +159,12 @@ class RequestParser(
     ): RequestParametersFrom<*>? =
         catching { JwsCompactTyped<RequestParameters>(this) }
             .getOrNull()?.let { jws ->
+                jws.jws.jwsHeader.type.let { type ->
+                    if (type != JwsContentTypeConstants.OAUTH_AUTHZ_REQUEST)
+                        throw InvalidRequest(
+                            "request object typ is not ${JwsContentTypeConstants.OAUTH_AUTHZ_REQUEST}: $type"
+                        )
+                }
                 RequestParametersFrom.Jws(
                     jws = jws.jws,
                     parameters = jws.payload,
@@ -185,9 +194,10 @@ class RequestParser(
         val decrypted = decryptRequestObject(jwe).getOrElse {
             throw InvalidRequest("Decryption of request object failed", it)
         }
+        // OpenID4VP 1.0, 5.10.1 permits encryption only in addition to signing, never instead of it, and per
+        // RFC 9101, 6.1 decrypting a request object yields "a signed Request Object"
         return decrypted.payload.parseAsJwsRequest(parent, jwe.header)
-            ?: decrypted.payload.parseFromJson(parent, jwe.header)
-            ?: throw InvalidRequest("Decrypted request object is not a valid request object")
+            ?: throw InvalidRequest("Decrypted request object is not a signed request object")
     }
 
 }

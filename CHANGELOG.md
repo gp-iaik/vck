@@ -40,6 +40,9 @@ Release 8.0.0 (unreleased):
     - Terminate request processing if the request object does not carry back the `wallet_nonce` we sent, as required by OpenID4VP 1.0, Section 5.10.1
     - Pass `requireEncryptedRequests = true` to `OpenId4VpHolder` to reject a plain request object served at a `request_uri` fetched with POST
     - Add `decryptedFrom` to `RequestParametersFrom.Jws` and `RequestParametersFrom.Json`, holding the header of the JWE a request was decrypted from, and `requestWasEncrypted` to `AuthorizationResponsePreparationState`
+    - Reject request objects that are not a JWS (and optionally encrypted) per RFC 9101, Section 4
+    - Reject request objects that do not carry `typ: oauth-authz-req+jwt` as required by OpenID4VP 1.0, Section 5.1
+    - Deprecate `CreationOptions.RequestByReference` at error level: it serves an unsigned request object by reference, which OpenID4VP 1.0, Section 5.10.1 forbids, instead use `CreationOptions.SignedRequestByReference`
 - OpenID for Verifiable Credential Issuance:
     - Rework validation of key attestation statements
     - Make sure a `nonce` provided by the credential issuer can only be used for one request to the credential endpoint

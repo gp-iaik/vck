@@ -384,8 +384,9 @@ val PreRegisteredClientTest by matrixSuite {
             val requestUrl = "https://www.example.com/request/${uuid4()}"
             val (authRequestUrlWithRequestUri, jar) = it.verifierOid4vp.createAuthnRequest(
                 requestOptionsAtomicAttribute(),
-                // `wallet_nonce` is only sent when fetching the request object with POST, see OpenID4VP 1.0, 5.10
-                CreationOptions.RequestByReference(
+                // `wallet_nonce` is only sent when fetching the request object with POST, see OpenID4VP 1.0, 5.10,
+                // and 5.10.1 requires the request object served there to be signed
+                CreationOptions.SignedRequestByReference(
                     it.walletUrl, requestUrl, JarRequestParameters.RequestUriMethod.POST
                 )
             ).getOrThrow()
@@ -405,7 +406,7 @@ val PreRegisteredClientTest by matrixSuite {
                 remoteResourceRetriever = {
                     if (it.url == requestUrl) {
                         jar.invoke(it.requestObjectParameters).getOrThrow().also {
-                            joseCompliantSerializer.decodeFromString<AuthenticationRequestParameters>(it).walletNonce.also {
+                            JwsCompactTyped<AuthenticationRequestParameters>(it).payload.walletNonce.also {
                                 it.shouldNotBeNull()
                                 nonceMap.contains(it).shouldBeTrue()
                             }

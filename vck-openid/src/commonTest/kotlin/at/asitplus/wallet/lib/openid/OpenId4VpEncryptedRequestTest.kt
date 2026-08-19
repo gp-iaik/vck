@@ -1,11 +1,15 @@
 package at.asitplus.wallet.lib.openid
 
+import at.asitplus.openid.AuthenticationRequestParameters
 import at.asitplus.openid.JarRequestParameters
+import at.asitplus.signum.indispensable.SignatureAlgorithm
 import at.asitplus.signum.indispensable.josef.JweAlgorithm
 import at.asitplus.signum.indispensable.josef.JweEncryption
 import at.asitplus.signum.indispensable.josef.JweHeader
+import at.asitplus.signum.indispensable.josef.io.joseCompliantSerializer
 import at.asitplus.testballoon.matrix.fixture
 import at.asitplus.testballoon.matrix.matrixSuite
+import at.asitplus.wallet.lib.DefaultNonceService
 import at.asitplus.wallet.lib.RequestOptionsCredential
 import at.asitplus.wallet.lib.agent.EphemeralEncryptionKeyService
 import at.asitplus.wallet.lib.agent.EphemeralKeyWithoutCert
@@ -14,13 +18,18 @@ import at.asitplus.wallet.lib.agent.RandomSource
 import at.asitplus.wallet.lib.agent.toEncryptionJsonWebKey
 import at.asitplus.wallet.lib.data.ConstantIndex
 import at.asitplus.wallet.lib.jws.EncryptJwe
+import at.asitplus.wallet.lib.jws.JwsContentTypeConstants
+import at.asitplus.wallet.lib.jws.JwsHeaderNone
+import at.asitplus.wallet.lib.jws.SignJwt
 import at.asitplus.wallet.lib.openid.DummyCredentialDataProvider.issueAndStorePlainJwt
+import at.asitplus.wallet.lib.utils.DefaultMapStore
 import com.benasher44.uuid.uuid4
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.types.shouldBeInstanceOf
+import io.ktor.http.*
 import kotlinx.coroutines.runBlocking
 
 /**
@@ -41,22 +50,34 @@ val OpenId4VpEncryptedRequestTest by matrixSuite {
                 val redirectUrl = "https://example.com/rp/${uuid4()}"
                 val walletUrl = "https://example.com/wallet/${uuid4()}"
                 val requestUrl = "https://example.com/request/${uuid4()}"
+                val verifierKeyMaterial = EphemeralKeyWithoutCert()
+                val clientIdScheme = ClientIdScheme.PreRegistered(clientId, redirectUrl)
                 val verifierOid4vp = OpenId4VpVerifier(
-                    keyMaterial = EphemeralKeyWithoutCert(),
-                    clientIdScheme = ClientIdScheme.PreRegistered(clientId, redirectUrl),
+                    keyMaterial = verifierKeyMaterial,
+                    clientIdScheme = clientIdScheme,
                 )
                 val requestOptions = OpenId4VpRequestOptions(
                     presentationRequest = CredentialPresentationRequestBuilder(
                         RequestOptionsCredential(ConstantIndex.AtomicAttribute2023)
                     ).toDCQLRequest(),
                 )
+                val requestFactory = OpenId4VpRequestFactory(
+                    clientIdScheme = clientIdScheme,
+                    ephemeralEncryptionKeyService = EphemeralEncryptionKeyService(),
+                    decryptionKeyMaterial = null,
+                    signAuthnRequest = SignJwt(verifierKeyMaterial, JwsHeaderClientIdScheme(clientIdScheme)),
+                    nonceService = DefaultNonceService(),
+                    supportedAlgorithms = setOf(SignatureAlgorithm.ECDSAwithSHA256),
+                    stateToAuthnRequestStore = DefaultMapStore(),
+                    supportedJweEncryptionAlgorithms = JweEncryption.entries.toSet(),
+                )
 
                 /** Holder fetching the request object from [requestUrl] with POST, [served] records what it got. */
                 var served: String? = null
                 fun holder(
-                    ephemeralEncryptionKeyService: EphemeralEncryptionKeyService?,
+                    ephemeralEncryptionKeyService: EphemeralEncryptionKeyService? = null,
                     requireEncryptedRequests: Boolean = false,
-                    serve: suspend (at.asitplus.openid.RequestObjectParameters?) -> String,
+                    serve: suspend (at.asitplus.openid.RequestObjectParameters?) -> String = { "" },
                 ) = OpenId4VpHolder(
                     holder = holderAgent,
                     randomSource = RandomSource.Default,
@@ -102,7 +123,7 @@ val OpenId4VpEncryptedRequestTest by matrixSuite {
             ).getOrThrow()
             jar.shouldNotBeNull()
 
-            val holder = f.holder(null) { jar.invoke(it).getOrThrow() }
+            val holder = f.holder { jar.invoke(it).getOrThrow() }
 
             holder.createAuthnResponse(url).getOrThrow()
                 .shouldBeInstanceOf<AuthenticationResponseResult.Redirect>()
@@ -183,7 +204,7 @@ val OpenId4VpEncryptedRequestTest by matrixSuite {
             jar.shouldNotBeNull()
 
             val foreignKey = EphemeralEncryptionKeyService().createKey().toEncryptionJsonWebKey()
-            val holder = f.holder(null) { params ->
+            val holder = f.holder { params ->
                 EncryptJwe()(
                     JweHeader(JweAlgorithm.ECDH_ES, JweEncryption.A128GCM, keyId = foreignKey.keyId),
                     jar.invoke(params).getOrThrow(),
@@ -346,12 +367,97 @@ val OpenId4VpEncryptedRequestTest by matrixSuite {
             ).getOrThrow()
             jar.shouldNotBeNull()
 
-            val holder = f.holder(null) { jar.invoke(it).getOrThrow() }
+            val holder = f.holder { jar.invoke(it).getOrThrow() }
 
             holder.startAuthorizationResponsePreparation(url).getOrThrow().apply {
                 requestWasEncrypted shouldBe false
                 request.decryptedFrom shouldBe null
             }
+        }
+
+        "plain request object served at the request_uri is rejected" { f ->
+            // OpenID4VP 1.0, 5.10.1: the request URI response body is "a signed, optionally encrypted, request object"
+            val (url, _) = f.verifierOid4vp.createAuthnRequest(
+                f.requestOptions,
+                CreationOptions.SignedRequestByReference(
+                    f.walletUrl, f.requestUrl, JarRequestParameters.RequestUriMethod.POST
+                )
+            ).getOrThrow()
+
+            val holder = f.holder(EphemeralEncryptionKeyService()) { params ->
+                joseCompliantSerializer.encodeToString(
+                    f.requestFactory.createPlainAuthnRequest(f.requestOptions, params)
+                )
+            }
+
+            holder.createAuthnResponse(url).isFailure shouldBe true
+        }
+
+        "encrypted request object whose payload is plain JSON is rejected" { f ->
+            // encryption is permitted in addition to signing, never instead of it, see OpenID4VP 1.0, 5.10.1
+            val (url, _) = f.verifierOid4vp.createAuthnRequest(
+                f.requestOptions,
+                CreationOptions.SignedRequestByReference(
+                    f.walletUrl, f.requestUrl, JarRequestParameters.RequestUriMethod.POST
+                )
+            ).getOrThrow()
+
+            val holder = f.holder(EphemeralEncryptionKeyService()) { params ->
+                val recipientKey = params.shouldNotBeNull().walletMetadata.shouldNotBeNull()
+                    .jsonWebKeySet.shouldNotBeNull().keys.first()
+                EncryptJwe()(
+                    JweHeader(JweAlgorithm.ECDH_ES, JweEncryption.A128GCM, keyId = recipientKey.keyId),
+                    joseCompliantSerializer.encodeToString(
+                        f.requestFactory.createPlainAuthnRequest(f.requestOptions, params)
+                    ),
+                    recipientKey,
+                ).getOrThrow().serialize()
+            }
+
+            holder.createAuthnResponse(url).isFailure shouldBe true
+        }
+
+        "request object with the wrong typ is rejected" { f ->
+            // OpenID4VP 1.0, 5.1: "Wallets MUST NOT process Request Objects where the typ Header Parameter is not
+            // present or does not have the value oauth-authz-req+jwt"
+            val (url, _) = f.verifierOid4vp.createAuthnRequest(
+                f.requestOptions,
+                CreationOptions.SignedRequestByReference(
+                    f.walletUrl, f.requestUrl, JarRequestParameters.RequestUriMethod.POST
+                )
+            ).getOrThrow()
+
+            val holder = f.holder(EphemeralEncryptionKeyService()) { params ->
+                SignJwt<AuthenticationRequestParameters>(EphemeralKeyWithoutCert(), JwsHeaderNone())(
+                    JwsContentTypeConstants.JWT,
+                    f.requestFactory.createPlainAuthnRequest(f.requestOptions, params),
+                    AuthenticationRequestParameters.serializer(),
+                ).getOrThrow().toString()
+            }
+
+            holder.createAuthnResponse(url).isFailure shouldBe true
+        }
+
+        "plain request object in the request parameter is rejected" { f ->
+            // RFC 9101, 4: a request object is "JWS signed" or "JWS signed and JWE encrypted", there is no third form
+            val url = f.verifierOid4vp.createAuthnRequest(
+                f.requestOptions, CreationOptions.Query(f.walletUrl)
+            ).getOrThrow().url + "&request=" + joseCompliantSerializer.encodeToString(
+                f.requestFactory.createPlainAuthnRequest(f.requestOptions)
+            ).encodeURLParameter()
+
+            f.holder().createAuthnResponse(url).isFailure shouldBe true
+        }
+
+        "unparseable request parameter is rejected" { f ->
+            // `RequestParametersSerializer` picks `JarRequestParameters` as soon as `request` is present, so the other
+            // query parameters are dropped and there is nothing to fall back to either way, but the error should name
+            // the request object rather than the `response_type` that went missing with it
+            val url = f.verifierOid4vp.createAuthnRequest(
+                f.requestOptions, CreationOptions.Query(f.walletUrl)
+            ).getOrThrow().url + "&request=not-a-request-object"
+
+            f.holder().createAuthnResponse(url).isFailure shouldBe true
         }
 
         "wallet metadata carries exactly one encryption key, fresh for every request" { f ->

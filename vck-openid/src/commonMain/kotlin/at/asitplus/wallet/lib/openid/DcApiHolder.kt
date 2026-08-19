@@ -6,10 +6,8 @@ import at.asitplus.dcapi.DCAPIResponse
 import at.asitplus.dcapi.DigitalCredentialInterface
 import at.asitplus.dcapi.IsoMdocResponse
 import at.asitplus.openid.RequestParametersFrom
-import at.asitplus.openid.RequestParametersFrom.IsoMdocDcApi
-import at.asitplus.openid.RequestParametersFrom.OpenId4VpDcApiMultiSigned
-import at.asitplus.openid.RequestParametersFrom.OpenId4VpDcApiSigned
-import at.asitplus.openid.RequestParametersFrom.OpenId4VpDcApiUnsigned
+import at.asitplus.openid.RequestParametersFrom.*
+import at.asitplus.wallet.lib.agent.CredentialMatchingResult
 import at.asitplus.wallet.lib.agent.EphemeralKeyWithoutCert
 import at.asitplus.wallet.lib.agent.Holder
 import at.asitplus.wallet.lib.agent.HolderAgent
@@ -44,7 +42,7 @@ class DcApiHolder @JvmOverloads constructor(
      * consent, and resume with [finalizeAuthorizationResponse].
      */
     suspend fun startAuthorizationResponsePreparation(
-        request: RequestParametersFrom.DcApiRequest,
+        request: DcApiRequest,
     ): KmmResult<DcApiPreparationState> = catching {
         when (request) {
             is OpenId4VpDcApiSigned -> DcApiPreparationState.OpenId4Vp(

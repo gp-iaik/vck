@@ -132,6 +132,7 @@ class OpenId4VpVerifier @JvmOverloads constructor(
     /**
      * Creates a new authentication request conforming to OpenID4VP.
      */
+    @Suppress("DEPRECATION_ERROR")
     suspend fun createAuthnRequest(
         requestOptions: OpenId4VpRequestOptions,
         creationOptions: CreationOptions,

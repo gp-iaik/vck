@@ -6,6 +6,10 @@ import at.asitplus.signum.indispensable.josef.JwsCompactTyped
 import at.asitplus.signum.indispensable.josef.io.joseCompliantSerializer
 import at.asitplus.testballoon.matrix.fixture
 import at.asitplus.testballoon.matrix.matrixSuite
+import at.asitplus.wallet.lib.agent.EphemeralKeyWithoutCert
+import at.asitplus.wallet.lib.jws.JwsContentTypeConstants
+import at.asitplus.wallet.lib.jws.JwsHeaderNone
+import at.asitplus.wallet.lib.jws.SignJwt
 import at.asitplus.wallet.lib.oidvci.encodeToParameters
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.collections.shouldHaveSize
@@ -13,6 +17,7 @@ import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import io.ktor.http.*
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonObject
 
 
@@ -89,6 +94,17 @@ val OpenIdRequestParserTests by matrixSuite {
 
     val authnRequestSerialized = joseCompliantSerializer.encodeToString(authnRequest)
 
+    /**
+     * The captured [jws] above is a real request from a deployed verifier whose header is `{"alg":"RS256","x5c":[…]}`,
+     * i.e. it carries no `typ` at all, which OpenID4VP 1.0, 5.1 forbids wallets to process. This is the same request
+     * object, correctly typed, for the cases that assert successful parsing.
+     */
+    val typedJws = runBlocking {
+        SignJwt<JsonObject>(EphemeralKeyWithoutCert(), JwsHeaderNone())(
+            JwsContentTypeConstants.OAUTH_AUTHZ_REQUEST, authnRequest, JsonObject.serializer()
+        ).getOrThrow().toString()
+    }
+
     fixture {
         RequestParser()
     } - {
@@ -125,11 +141,17 @@ val OpenIdRequestParserTests by matrixSuite {
             }
         }
 
+        "request object without typ is rejected" { requestParser ->
+            // OpenID4VP 1.0, 5.1: "Wallets MUST NOT process Request Objects where the typ Header Parameter is not
+            // present or does not have the value oauth-authz-req+jwt"
+            requestParser.parseRequestParameters(jws).isFailure shouldBe true
+        }
+
         "signed request directly" { requestParser ->
-            requestParser.parseRequestParameters(jws).getOrThrow().apply {
+            requestParser.parseRequestParameters(typedJws).getOrThrow().apply {
                 shouldBeInstanceOf<RequestParametersFrom<AuthenticationRequestParameters>>()
                 shouldBeInstanceOf<RequestParametersFrom.Jws<*>>()
-                this.jws.toString() shouldBe jws
+                this.jws.toString() shouldBe typedJws
                 parameters.assertParams()
 
                 joseCompliantSerializer.decodeFromString<RequestParametersFrom<AuthenticationRequestParameters>>(
@@ -140,12 +162,12 @@ val OpenIdRequestParserTests by matrixSuite {
 
 
         "signed request by value" { requestParser ->
-            val input = "https://example.com?request=$jws&client_id=s6BhdRkqt3"
+            val input = "https://example.com?request=$typedJws&client_id=s6BhdRkqt3"
 
             requestParser.parseRequestParameters(input).getOrThrow().apply {
                 shouldBeInstanceOf<RequestParametersFrom<AuthenticationRequestParameters>>()
                 shouldBeInstanceOf<RequestParametersFrom.Jws<*>>()
-                this.jws.toString() shouldBe jws
+                this.jws.toString() shouldBe typedJws
                 parent.toString() shouldBe input
                 parameters.assertParams()
 
@@ -165,27 +187,18 @@ val OpenIdRequestParserTests by matrixSuite {
         )
     } - {
 
-        "plain request by reference" { requestParser ->
+        "plain request by reference is rejected" { requestParser ->
+            // OpenID4VP 1.0, 5.10.1: the request URI response body is "a signed, optionally encrypted, request object"
             val input = "https://example.com?request_uri=https%3A%2F%2Fclient.example.org%2Freq%2F1234567890&client_id=s6BhdRkqt3"
 
-            requestParser.parseRequestParameters(input).getOrThrow().apply {
-                shouldBeInstanceOf<RequestParametersFrom<AuthenticationRequestParameters>>()
-                shouldBeInstanceOf<RequestParametersFrom.Json<*>>()
-                jsonString shouldBe authnRequestSerialized
-                parent.toString() shouldBe input
-                parameters.assertParams()
-
-                joseCompliantSerializer.decodeFromString<RequestParametersFrom<AuthenticationRequestParameters>>(
-                    joseCompliantSerializer.encodeToString<RequestParametersFrom<AuthenticationRequestParameters>>(this)
-                ).shouldBe(this)
-            }
+            requestParser.parseRequestParameters(input).isFailure shouldBe true
         }
 
     }
     fixture {
         RequestParser(
             remoteResourceRetriever = {
-                if (it.url == "https://client.example.org/req/1234567890") jws else null
+                if (it.url == "https://client.example.org/req/1234567890") typedJws else null
             }
         )
     } - {
@@ -195,7 +208,7 @@ val OpenIdRequestParserTests by matrixSuite {
             requestParser.parseRequestParameters(input).getOrThrow().apply {
                 shouldBeInstanceOf<RequestParametersFrom<AuthenticationRequestParameters>>()
                 shouldBeInstanceOf<RequestParametersFrom.Jws<*>>()
-                this.jws.toString() shouldBe jws
+                this.jws.toString() shouldBe typedJws
                 parent.toString() shouldBe input
                 parameters.assertParams()
 
