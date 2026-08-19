@@ -371,11 +371,11 @@ class SimpleAuthorizationService @JvmOverloads constructor(
             ?: throw InvalidRequest("client could not be authenticated")
         // PAR stores the request for later authorization. issuer_state is single-use and must only be consumed
         // when /authorize is executed with the referenced request_uri.
-        actualRequest.validate(validateIssuerState = false)
+        val validatedRequest = actualRequest.validate(validateIssuerState = false)
         val requestUri = "urn:ietf:params:oauth:request_uri:${uuid4()}".also {
             requestUriToPushedAuthorizationRequest.put(
                 it,
-                PushedAuthorizationRequest(actualRequest, presentedClient)
+                PushedAuthorizationRequest(validatedRequest, presentedClient)
             )
         }
         PushedAuthenticationResponseParameters(
@@ -497,9 +497,13 @@ class SimpleAuthorizationService @JvmOverloads constructor(
     /**
      * Validates basic requirements to [AuthenticationRequestParameters]:
      *  * [AuthenticationRequestParameters.redirectUrl] needs to be set
+     *  * [AuthenticationRequestParameters.codeChallenge] needs to be set, with method `S256` (RFC 7636)
      *  * [AuthenticationRequestParameters.issuerState] needs to conform to our internal state
      *  * [AuthenticationRequestParameters.scope] is validated by [strategy]
      *  * [AuthenticationRequestParameters.authorizationDetails] are validated by [strategy]
+     *
+     * @return the request with [AuthenticationRequestParameters.scope] reduced to the values [strategy] accepts,
+     * so that unvalidated input from the client is not carried into the authorization code or the access token
      */
     private suspend fun AuthenticationRequestParameters.validate(
         validateIssuerState: Boolean = true,
@@ -509,7 +513,7 @@ class SimpleAuthorizationService @JvmOverloads constructor(
             throw InvalidRequest("code_challenge not set")
         if (codeChallengeMethod != OpenIdConstants.CODE_CHALLENGE_METHOD_SHA256)
             throw InvalidRequest("code_challenge_method not supported: $codeChallengeMethod")
-        scope?.let {
+        val filteredScope = scope?.let {
             strategy.filterScope(it)
                 ?: throw InvalidScope("No matching scope in $it")
         }
@@ -533,7 +537,7 @@ class SimpleAuthorizationService @JvmOverloads constructor(
             }
         }
 
-        return this
+        return copy(scope = filteredScope)
     }
 
     /**

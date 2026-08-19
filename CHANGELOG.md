@@ -96,6 +96,9 @@ Release 8.0.0 (unreleased):
     - Add `OAuth2Exception.UnsupportedGrantType` for the `unsupported_grant_type` error of [RFC 6749](https://datatracker.ietf.org/doc/html/rfc6749#section-5.2)
     - Restrict pre-authorized codes to the credential configuration IDs of the offer they belong to, tracked in the new `ClientAuthRequest.configurationIds`.
     - Support OID4VCI transaction codes for the pre-authorized code flow, with the new `transactionCode` parameters of `SimpleAuthorizationService.offerWithPreAuthnForUserForSchemes()` and `providePreAuthorizedCode()`.
+    - Return `null` from `CredentialAuthorizationServiceStrategy.filterScope()` when no requested scope is supported to trigger `invalid_scope` error
+    - Grant only the scopes the authorization server accepted: `SimpleAuthorizationService` keeps the filtered scope with the authorization code
+    - Implement `validScopes()` and `filterScope()` in `QtspAuthorizationServiceStrategy` for the CSC scopes `service` and `credential`, which the delegate `CredentialAuthorizationServiceStrategy` does not know
 - Deprecations:
     - Remove code deprecated in 7.0.0, e.g. various `Iso180137AnnexC*` and related classes
     - Deprecate all classes used for Presentation Exchange requests and so on, e.g., `CredentialPresentationRequest.PresentationExchangeRequest` or `PresentationExchangeCredentialDisclosure` or `CredentialPresentation.PresentationExchangePresentation`
