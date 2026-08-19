@@ -34,6 +34,9 @@ import at.asitplus.wallet.lib.data.ConstantIndex.AtomicAttribute2023.CLAIM_GIVEN
 import at.asitplus.wallet.lib.data.ConstantIndex.CredentialRepresentation.ISO_MDOC
 import at.asitplus.wallet.lib.data.ConstantIndex.CredentialRepresentation.SD_JWT
 import at.asitplus.wallet.lib.data.CredentialPresentationRequest
+import at.asitplus.wallet.lib.jws.JwsContentTypeConstants
+import at.asitplus.wallet.lib.jws.JwsHeaderNone
+import at.asitplus.wallet.lib.jws.SignJwt
 import at.asitplus.wallet.lib.data.rfc3986.toUri
 import at.asitplus.wallet.lib.openid.DummyCredentialDataProvider.issueAndStoreIsoMdoc
 import at.asitplus.wallet.lib.openid.DummyCredentialDataProvider.issueAndStoreSdJwt
@@ -611,6 +614,60 @@ val OpenId4VpDcApiProtocolTest by matrixSuite {
             f.holderOid4vp.finalizeAuthorizationResponse(preparationState).getOrThrow()
                 .shouldBeInstanceOf<AuthenticationResponseResult.DcApi>()
                 .params.shouldBeInstanceOf<OpenId4VpResponseMultiSigned>()
+        }
+
+        test("DC API signed: wrong typ is rejected") { f ->
+            // OpenID4VP 1.0, A.3.2.1 encodes the DC API signed request as "a request object as defined in Section 5",
+            // so Section 5's "Wallets MUST NOT process Request Objects where the typ Header Parameter is not present
+            // or does not have the value oauth-authz-req+jwt" applies here too
+            val reqOptions = OpenId4VpRequestOptions(
+                presentationRequest = dcqlRequest,
+                responseMode = OpenIdConstants.ResponseMode.DcApi,
+                expectedOrigins = listOf(callingOrigin),
+            )
+            val payload = f.createSignedAuthnRequest(reqOptions).payload
+
+            val dcApiRequest = RequestParametersFrom.OpenId4VpDcApiSigned(
+                jwsTyped = SignJwt<AuthenticationRequestParameters>(EphemeralKeyWithoutCert(), JwsHeaderNone())(
+                    JwsContentTypeConstants.JWT, payload, AuthenticationRequestParameters.serializer()
+                ).getOrThrow(),
+                credentialIds = listOf(credentialId),
+                callingPackageName = callingPackageName,
+                callingOrigin = callingOrigin,
+            )
+
+            f.holderOid4vp.startAuthorizationResponsePreparation(dcApiRequest).apply {
+                isFailure shouldBe true
+                exceptionOrNull()!!.message!! shouldContain "typ"
+            }
+        }
+
+        test("DC API multisigned: every signature has to carry the typ, not just one") { f ->
+            // one request object, several protected headers, see OpenID4VP 1.0, A.3.2.2: a verifier typing only the
+            // signature we happen to rely on is not enough
+            val reqOptions = OpenId4VpRequestOptions(
+                presentationRequest = dcqlRequest,
+                responseMode = OpenIdConstants.ResponseMode.DcApi,
+                expectedOrigins = listOf(callingOrigin),
+            )
+            val signedRequest = f.createSignedAuthnRequest(reqOptions)
+            val untyped = SignJwt<AuthenticationRequestParameters>(EphemeralKeyWithoutCert(), JwsHeaderNone())(
+                JwsContentTypeConstants.JWT, signedRequest.payload, AuthenticationRequestParameters.serializer()
+            ).getOrThrow()
+
+            val dcApiRequest = RequestParametersFrom.OpenId4VpDcApiMultiSigned(
+                jwsTyped = JwsTyped<AuthenticationRequestParameters>(
+                    listOf(signedRequest.jws.toJwsFlattened(), untyped.jws.toJwsFlattened())
+                ),
+                credentialIds = listOf(credentialId),
+                callingPackageName = callingPackageName,
+                callingOrigin = callingOrigin,
+            )
+
+            f.holderOid4vp.startAuthorizationResponsePreparation(dcApiRequest).apply {
+                isFailure shouldBe true
+                exceptionOrNull()!!.message!! shouldContain "typ"
+            }
         }
 
         test("DC API multisigned: origin mismatch rejects with InvalidRequest when expected_origins is set") { f ->

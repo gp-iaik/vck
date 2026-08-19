@@ -418,7 +418,7 @@ val OpenId4VpEncryptedRequestTest by matrixSuite {
         }
 
         "request object with the wrong typ is rejected" { f ->
-            // OpenID4VP 1.0, 5.1: "Wallets MUST NOT process Request Objects where the typ Header Parameter is not
+            // OpenID4VP 1.0, 5: "Wallets MUST NOT process Request Objects where the typ Header Parameter is not
             // present or does not have the value oauth-authz-req+jwt"
             val (url, _) = f.verifierOid4vp.createAuthnRequest(
                 f.requestOptions,

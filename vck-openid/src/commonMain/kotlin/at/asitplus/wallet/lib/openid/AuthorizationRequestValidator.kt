@@ -9,6 +9,7 @@ import at.asitplus.openid.OpenIdConstants.ClientIdScheme
 import at.asitplus.openid.RequestParametersFrom
 import at.asitplus.signum.indispensable.CryptoPublicKey
 import at.asitplus.signum.indispensable.io.Base64UrlStrict
+import at.asitplus.signum.indispensable.josef.JWS
 import at.asitplus.signum.indispensable.josef.JsonWebToken
 import at.asitplus.signum.indispensable.josef.JwsAlgorithm
 import at.asitplus.signum.indispensable.josef.JwsCompact
@@ -19,6 +20,7 @@ import at.asitplus.signum.indispensable.pki.leaf
 import at.asitplus.wallet.lib.agent.VerifySignature
 import at.asitplus.wallet.lib.agent.VerifySignatureFun
 import at.asitplus.wallet.lib.agent.requireTrustedSigningCertificate
+import at.asitplus.wallet.lib.jws.JwsContentTypeConstants
 import at.asitplus.wallet.lib.jws.VerifyJwsObjectTrusted
 import at.asitplus.wallet.lib.jws.VerifyJwsObjectTrustedCertificate
 import at.asitplus.wallet.lib.jws.VerifyJwsSignature
@@ -29,7 +31,6 @@ import at.asitplus.wallet.lib.utils.DefaultMapStore
 import at.asitplus.wallet.lib.utils.MapStore
 import io.ktor.http.*
 import io.matthewnelson.encoding.core.Encoder.Companion.encodeToString
-import kotlin.coroutines.cancellation.CancellationException
 
 internal class AuthorizationRequestValidator(
     private val walletNonceMapStore: MapStore<String, String> = DefaultMapStore(),
@@ -42,6 +43,9 @@ internal class AuthorizationRequestValidator(
     suspend fun validateAuthorizationRequest(
         request: RequestParametersFrom<AuthenticationRequestParameters>,
     ) {
+        (request as? RequestParametersFrom.RequestParametersSigned<AuthenticationRequestParameters>)
+            ?.jwsTyped?.jws?.requireRequestObjectType()
+
         request.parameters.responseType?.let {
             if (!it.contains(OpenIdConstants.VP_TOKEN)) {
                 throw InvalidRequest("invalid response_type: $it")
@@ -188,7 +192,8 @@ internal class AuthorizationRequestValidator(
         }
         when (this) {
             is RequestParametersFrom.OpenId4VpDcApiSigned,
-            is RequestParametersFrom.OpenId4VpDcApiMultiSigned -> {
+            is RequestParametersFrom.OpenId4VpDcApiMultiSigned,
+                -> {
                 if (this.parameters.clientId == null)
                     throw InvalidRequest("client_id must be set for signed DC API request")
                 val expectedOrigins = this.parameters.expectedOrigins
@@ -345,4 +350,20 @@ private inline fun <reified T : RelyingPartyTrust> Set<RelyingPartyTrust>.requir
         failures += catchingUnwrapped { check(source) }.exceptionOrNull() ?: return
     }
     throw InvalidRequest("$rejected: ${failures.joinToString { it.message ?: it::class.simpleName ?: "" }}")
+}
+
+/**
+ * Require `typ` to be `oauth-authz-req+jwt` per OpenID4VP 1.0, 5.
+ *
+ * A request carrying several signatures, i.e. a multi-signed DC API request per OpenID4VP 1.0, A.3.2.2, is still one
+ * request object, so every protected header has to declare it.
+ */
+@Throws(OAuth2Exception::class)
+internal fun JWS.requireRequestObjectType() = when (this) {
+    is JwsCompact -> listOf(jwsHeader)
+    is JwsGeneral -> jwsHeaders
+    else -> throw InvalidRequest("Unsupported request object signature: $this")
+}.forEach {
+    if (it.type != JwsContentTypeConstants.OAUTH_AUTHZ_REQUEST)
+        throw InvalidRequest("request object typ is not ${JwsContentTypeConstants.OAUTH_AUTHZ_REQUEST}: ${it.type}")
 }

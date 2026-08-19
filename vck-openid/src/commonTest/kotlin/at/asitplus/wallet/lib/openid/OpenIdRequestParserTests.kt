@@ -96,7 +96,7 @@ val OpenIdRequestParserTests by matrixSuite {
 
     /**
      * The captured [jws] above is a real request from a deployed verifier whose header is `{"alg":"RS256","x5c":[…]}`,
-     * i.e. it carries no `typ` at all, which OpenID4VP 1.0, 5.1 forbids wallets to process. This is the same request
+     * i.e. it carries no `typ` at all, which OpenID4VP 1.0, 5 forbids wallets to process. This is the same request
      * object, correctly typed, for the cases that assert successful parsing.
      */
     val typedJws = runBlocking {
@@ -142,7 +142,7 @@ val OpenIdRequestParserTests by matrixSuite {
         }
 
         "request object without typ is rejected" { requestParser ->
-            // OpenID4VP 1.0, 5.1: "Wallets MUST NOT process Request Objects where the typ Header Parameter is not
+            // OpenID4VP 1.0, 5: "Wallets MUST NOT process Request Objects where the typ Header Parameter is not
             // present or does not have the value oauth-authz-req+jwt"
             requestParser.parseRequestParameters(jws).isFailure shouldBe true
         }

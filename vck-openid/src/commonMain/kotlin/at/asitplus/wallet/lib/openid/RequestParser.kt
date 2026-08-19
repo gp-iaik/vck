@@ -19,7 +19,6 @@ import at.asitplus.wallet.lib.data.MediaTypes
 import at.asitplus.wallet.lib.extensions.getEncryptionTargetKey
 import at.asitplus.wallet.lib.jws.DecryptJweFun
 import at.asitplus.wallet.lib.jws.DecryptJweWithEphemeralKey
-import at.asitplus.wallet.lib.jws.JwsContentTypeConstants
 import at.asitplus.wallet.lib.oidc.RequestObjectJwsVerifier
 import at.asitplus.wallet.lib.oidvci.OAuth2Exception.InvalidRequest
 import at.asitplus.wallet.lib.oidvci.decodeFromUrlQuery
@@ -159,12 +158,7 @@ class RequestParser(
     ): RequestParametersFrom<*>? =
         catching { JwsCompactTyped<RequestParameters>(this) }
             .getOrNull()?.let { jws ->
-                jws.jws.jwsHeader.type.let { type ->
-                    if (type != JwsContentTypeConstants.OAUTH_AUTHZ_REQUEST)
-                        throw InvalidRequest(
-                            "request object typ is not ${JwsContentTypeConstants.OAUTH_AUTHZ_REQUEST}: $type"
-                        )
-                }
+                jws.jws.requireRequestObjectType()
                 RequestParametersFrom.Jws(
                     jws = jws.jws,
                     parameters = jws.payload,
