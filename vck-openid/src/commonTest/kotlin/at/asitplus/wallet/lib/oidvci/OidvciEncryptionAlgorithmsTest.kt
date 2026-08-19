@@ -46,6 +46,7 @@ val OidvciEncryptionAlgorithmsTest by matrixSuite {
             val issuerEnc = JweEncryption.A128CBC_HS256
             val walletEnc = JweEncryption.A128GCM // will not be used, as wallet selects from issuer's algorithm!
             val authorizationService = SimpleAuthorizationService(
+                requirePushedAuthorizationRequests = false,
                 strategy = CredentialAuthorizationServiceStrategy(setOf(ConstantIndex.AtomicAttribute2023)),
             )
             var issuer = CredentialIssuer(

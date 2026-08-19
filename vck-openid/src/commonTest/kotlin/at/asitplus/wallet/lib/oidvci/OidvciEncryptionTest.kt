@@ -58,6 +58,7 @@ val OidvciEncryptionTest by matrixSuite {
     fixture {
         object {
             val authorizationService = SimpleAuthorizationService(
+                requirePushedAuthorizationRequests = false,
                 strategy = CredentialAuthorizationServiceStrategy(setOf(ConstantIndex.AtomicAttribute2023)),
             )
             var issuer = CredentialIssuer(

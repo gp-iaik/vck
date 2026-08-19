@@ -46,6 +46,7 @@ val OAuth2ClientDPoPTest by matrixSuite {
             val issuerKey = EphemeralKeyWithoutCert()
             val tokenService = TokenService.jwt(issueRefreshTokens = true, keyMaterial = issuerKey)
             val server = SimpleAuthorizationService(
+                requirePushedAuthorizationRequests = false,
                 strategy = DummyAuthorizationServiceStrategy(scope),
                 tokenService = tokenService,
             )

@@ -75,6 +75,7 @@ val OidvciCodeFlowTest by matrixSuite {
                 mapper = mapper,
             )
             var authorizationService = SimpleAuthorizationService(
+                requirePushedAuthorizationRequests = false,
                 strategy = strategy,
             )
             var issuer = CredentialIssuer(
@@ -303,6 +304,7 @@ val OidvciCodeFlowTest by matrixSuite {
 
         test("authorizationService with defect mapstore leads to an error") {
             it.authorizationService = SimpleAuthorizationService(
+                requirePushedAuthorizationRequests = false,
                 codeToClientAuthRequest = it.defectMapStore(),
                 strategy = CredentialAuthorizationServiceStrategy(setOf(AtomicAttribute2023)),
             )
@@ -537,6 +539,7 @@ val OidvciCodeFlowTest by matrixSuite {
             val credentialFormat = with(
                 CredentialIssuer(
                     authorizationService = SimpleAuthorizationService(
+                        requirePushedAuthorizationRequests = false,
                         strategy = CredentialAuthorizationServiceStrategy(setOf(scheme)),
                     ),
                     issuer = IssuerAgent(

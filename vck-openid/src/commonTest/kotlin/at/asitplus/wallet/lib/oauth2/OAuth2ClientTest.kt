@@ -28,6 +28,7 @@ val OAuth2ClientTest by matrixSuite {
             val scope = randomString()
             val client = OAuth2Client()
             val server = SimpleAuthorizationService(
+                requirePushedAuthorizationRequests = false,
                 strategy = DummyAuthorizationServiceStrategy(scope),
             )
         }

@@ -32,6 +32,7 @@ val OidvciOfferCodeTest by matrixSuite {
         object {
             val mapper = DefaultCredentialSchemeMapper()
             val authorizationService = SimpleAuthorizationService(
+                requirePushedAuthorizationRequests = false,
                 strategy = CredentialAuthorizationServiceStrategy(
                     credentialSchemes =  AttributeIndex.schemeSet,
                     mapper = mapper,

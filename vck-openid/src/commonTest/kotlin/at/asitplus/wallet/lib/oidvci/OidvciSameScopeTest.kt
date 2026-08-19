@@ -59,6 +59,7 @@ val OidvciSameScopeTest by matrixSuite {
             val scope = uuid4().toString()
             val mapper = SameScopeCredentialSchemeMapper(scope)
             val authorizationService = SimpleAuthorizationService(
+                requirePushedAuthorizationRequests = false,
                 strategy = CredentialAuthorizationServiceStrategy(
                     credentialSchemes =  AttributeIndex.schemeSet,
                     mapper = mapper,
@@ -226,6 +227,7 @@ val OidvciSameScopeTest by matrixSuite {
             val tokenUrl = "https://jwt-issuer.example.com/token"
             val tokenService = TokenService.jwt()
             val authorizationService = SimpleAuthorizationService(
+                requirePushedAuthorizationRequests = false,
                 strategy = CredentialAuthorizationServiceStrategy(
                     credentialSchemes = AttributeIndex.schemeSet,
                     mapper = it.mapper,

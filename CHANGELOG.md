@@ -88,6 +88,8 @@ Release 8.0.0 (unreleased):
     - Add `TokenService.validateAccessToken()`, which validates the access token and resolves the user info stored at issuance
     - Bind client authentication to internal state to prevent client mismatches in subsequent requests
     - Add `dpopKeyMaterial` as explicit constructor argument to `OAuth2KtorClient`
+    - Enforce `require_pushed_authorization_requests` in `SimpleAuthorizationService.authorize()` as mandated by [RFC 9126](https://datatracker.ietf.org/doc/html/rfc9126), Section 4
+    - Require PKCE with `code_challenge_method=S256` on every authorization request, as mandated by OpenID4VC HAIP, and advertise it in `code_challenge_methods_supported`
 - Deprecations:
     - Remove code deprecated in 7.0.0, e.g. various `Iso180137AnnexC*` and related classes
     - Deprecate all classes used for Presentation Exchange requests and so on, e.g., `CredentialPresentationRequest.PresentationExchangeRequest` or `PresentationExchangeCredentialDisclosure` or `CredentialPresentation.PresentationExchangePresentation`

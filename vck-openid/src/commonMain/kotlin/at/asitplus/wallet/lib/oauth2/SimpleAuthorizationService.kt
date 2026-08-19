@@ -136,10 +136,7 @@ class SimpleAuthorizationService @JvmOverloads constructor(
         /** Not necessary to load the authn request referenced by `request_uri`. */
         buildRequestObjectParameters = { null }
     ),
-    /**
-     * Sets [OAuth2AuthorizationServerMetadata.requirePushedAuthorizationRequests],
-     * must be set to `true` for OID4VC HAIP
-     */
+    /** Must be set to `true` for OID4VC HAIP, advertised in [metadata]. */
     private val requirePushedAuthorizationRequests: Boolean = true,
     /**
      * Sets [OAuth2AuthorizationServerMetadata.requestObjectSigningAlgorithmsSupported].
@@ -183,6 +180,7 @@ class SimpleAuthorizationService @JvmOverloads constructor(
             challengeEndpoint = clientAuthenticationService.supportedAuthMethods.takeIf { it != null }
                 ?.let { "$publicContext$challengeEndpointPath" },
             requirePushedAuthorizationRequests = requirePushedAuthorizationRequests,
+            codeChallengeMethodsSupported = setOf(OpenIdConstants.CODE_CHALLENGE_METHOD_SHA256),
             introspectionEndpointAuthMethodsSupported = clientAuthenticationService.supportedAuthMethods,
             tokenEndPointAuthMethodsSupported = clientAuthenticationService.supportedAuthMethods,
             clientAttestationSigningAlgValuesSupportedStrings = clientAuthenticationService.supportedSigningAlgs,
@@ -429,6 +427,9 @@ class SimpleAuthorizationService @JvmOverloads constructor(
         input: RequestParameters,
     ): Pair<AuthenticationRequestParameters, ClientBinding?> = when (input) {
         is AuthenticationRequestParameters -> {
+            requirePushedAuthorizationRequests.let {
+                if (it) throw InvalidRequest("pushed authorization request required, but got a plain request")
+            }
             // can't authenticate client with plain auth request in browser
             input to null
         }
@@ -440,6 +441,8 @@ class SimpleAuthorizationService @JvmOverloads constructor(
                 throw InvalidRequest("client_id not matching from par: ${input.clientId} vs ${storedRequest.request.clientId}")
             storedRequest.request to storedRequest.clientBinding
         } ?: run {
+            if (requirePushedAuthorizationRequests)
+                throw InvalidRequest("pushed authorization request required, but got request object by value")
             val request = requestParser.extractRequest(input, null)?.parameters as? AuthenticationRequestParameters
                 ?: throw InvalidRequest("could not parse request object from request")
             if (input.clientId != request.clientId)
@@ -464,6 +467,10 @@ class SimpleAuthorizationService @JvmOverloads constructor(
         validateIssuerState: Boolean = true,
     ): AuthenticationRequestParameters {
         require(redirectUrl != null) { "redirect_uri not set" }
+        if (codeChallenge == null)
+            throw InvalidRequest("code_challenge not set")
+        if (codeChallengeMethod != OpenIdConstants.CODE_CHALLENGE_METHOD_SHA256)
+            throw InvalidRequest("code_challenge_method not supported: $codeChallengeMethod")
         scope?.let {
             strategy.filterScope(it)
                 ?: throw InvalidScope("No matching scope in $it")
@@ -534,10 +541,15 @@ class SimpleAuthorizationService @JvmOverloads constructor(
                 throw InvalidGrant("client_id does not match authorization code")
         }
 
-        request.code?.let { code ->
-            clientAuthRequest.codeChallenge?.let {
-                validateCodeChallenge(code, request.codeVerifier, clientAuthRequest.codeChallenge)
-            }
+        if (request.grantType == OpenIdConstants.GRANT_TYPE_AUTHORIZATION_CODE) {
+            validateCodeChallenge(
+                code = request.code
+                    ?: throw InvalidGrant("code not set"),
+                codeVerifier = request.codeVerifier,
+                // Authorization requests are rejected without one, so a code that has none was not issued by us
+                codeChallenge = clientAuthRequest.codeChallenge
+                    ?: throw InvalidGrant("no code_challenge stored for this code")
+            )
         }
         val token = if (request.authorizationDetails != null) {
             tokenService.generation.buildToken(

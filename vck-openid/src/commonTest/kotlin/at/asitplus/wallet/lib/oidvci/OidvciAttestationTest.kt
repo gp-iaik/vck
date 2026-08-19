@@ -88,6 +88,7 @@ val OidvciAttestationTest by matrixSuite {
         object {
             val walletProviderKeyMaterial = EphemeralKeyWithoutCert()
             val authorizationService = SimpleAuthorizationService(
+                requirePushedAuthorizationRequests = false,
                 strategy = CredentialAuthorizationServiceStrategy(AttributeIndex.schemeSet),
             )
             val oauth2Client = OAuth2Client()

@@ -31,6 +31,7 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.types.shouldBeInstanceOf
 import io.ktor.http.*
 import kotlinx.coroutines.runBlocking
@@ -147,6 +148,26 @@ val OAuth2ClientAuthenticationTest by matrixSuite {
                         clientAttestationPop = clientAttestationPop ?: freshPop(),
                     )
                 ).getOrThrow()
+
+                /**
+                 * PAR + authorize round trip. The default configuration advertises (and now enforces)
+                 * `require_pushed_authorization_requests`, so this is the only way to obtain a code.
+                 */
+                @Suppress("DEPRECATION")
+                suspend fun codeViaPar(state: String): String = server.par(
+                    client.createAuthRequestJar(state = state, scope = scope),
+                    RequestInfo(
+                        url = "https://example.com/",
+                        method = HttpMethod.Post,
+                        clientAttestation = this.clientAttestation,
+                        clientAttestationPop = freshPop(),
+                    )
+                ).getOrThrow()
+                    .shouldBeInstanceOf<PushedAuthenticationResponseParameters>()
+                    .let { server.authorize(client.createAuthRequestAfterPar(it) as RequestParameters) { catching { user } } }
+                    .getOrThrow()
+                    .shouldBeInstanceOf<AuthenticationResponseResult.Redirect>()
+                    .params?.code.shouldNotBeNull()
 
                 @Suppress("DEPRECATION")
                 suspend fun getToken(state: String, code: String): TokenResponseParameters = server.token(
@@ -268,14 +289,9 @@ val OAuth2ClientAuthenticationTest by matrixSuite {
                 .apply { active shouldBe true }
         }
 
-        test("direct authorization code is bound to the client id") {
+        test("authorization code is bound to the client id") {
             val state = uuid4().toString()
-            val authRequest = it.client.createAuthRequestJar(state = state, scope = it.scope)
-            val code = it.server
-                .authorize(authRequest) { catching { user } }
-                .getOrThrow()
-                .shouldBeInstanceOf<AuthenticationResponseResult.Redirect>()
-                .params?.code.shouldNotBeNull()
+            val code = it.codeViaPar(state)
             val legitimateRequest = it.client.createTokenRequestParameters(
                 state = state,
                 authorization = OAuth2Client.AuthorizationForToken.Code(code),
@@ -588,16 +604,7 @@ val OAuth2ClientAuthenticationTest by matrixSuite {
 
         test("authorization code flow and client authentication") {
             val state = uuid4().toString()
-            val authnRequest = it.client.createAuthRequestJar(
-                state = state,
-                scope = it.scope,
-            )
-
-            val authnResponse = it.server.authorize(authnRequest as RequestParameters) { catching { user } }
-                .getOrThrow()
-                .shouldBeInstanceOf<AuthenticationResponseResult.Redirect>()
-            val code = authnResponse.params?.code
-                .shouldNotBeNull()
+            val code = it.codeViaPar(state)
 
             val token = it.getToken(state, code).apply {
                 authorizationDetails.shouldBeNull()
@@ -610,15 +617,7 @@ val OAuth2ClientAuthenticationTest by matrixSuite {
 
         test("authorization code flow without client authentication") {
             val state = uuid4().toString()
-            val authnRequest = it.client.createAuthRequestJar(
-                state = state,
-                scope = it.scope,
-            )
-            val authnResponse = it.server.authorize(authnRequest as RequestParameters) { catching { user } }
-                .getOrThrow()
-                .shouldBeInstanceOf<AuthenticationResponseResult.Redirect>()
-            val code = authnResponse.params?.code
-                .shouldNotBeNull()
+            val code = it.codeViaPar(state)
 
             val tokenRequest = it.client.createTokenRequestParameters(
                 state = state,
@@ -628,6 +627,62 @@ val OAuth2ClientAuthenticationTest by matrixSuite {
             shouldThrow<OAuth2Exception> {
                 it.server.token(tokenRequest, null).getOrThrow()
             }
+        }
+
+        /**
+         * RFC 9126 4.: when the AS advertises `require_pushed_authorization_requests`, it MUST reject
+         * authorization requests that have not been pushed. Otherwise a client can opt out of the client
+         * binding established at the PAR endpoint by simply not using it.
+         */
+        test("reject a plain authorization request when pushed authorization requests are required") {
+            val request = it.client.createAuthRequest(state = uuid4().toString(), scope = it.scope)
+            shouldThrow<OAuth2Exception.InvalidRequest> {
+                it.server.authorize(request as RequestParameters) { catching { user } }.getOrThrow()
+            }
+        }
+
+        test("reject a request object by value when pushed authorization requests are required") {
+            val request = it.client.createAuthRequestJar(state = uuid4().toString(), scope = it.scope)
+            shouldThrow<OAuth2Exception.InvalidRequest> {
+                it.server.authorize(request as RequestParameters) { catching { user } }.getOrThrow()
+            }
+        }
+
+        /** RFC 7636 and OID4VC HAIP require PKCE with S256, so a request without a challenge must not pass. */
+        test("reject an authorization request without code_challenge") {
+            val request = it.client.createAuthRequest(state = uuid4().toString(), scope = it.scope)
+                .copy(codeChallenge = null)
+            shouldThrow<OAuth2Exception.InvalidRequest> {
+                it.server.par(request, it.authenticationFor(it.client, it.clientKey)).getOrThrow()
+            }
+        }
+
+        test("reject an authorization request with a code_challenge_method other than S256") {
+            val request = it.client.createAuthRequest(state = uuid4().toString(), scope = it.scope)
+                .copy(codeChallengeMethod = "plain")
+            shouldThrow<OAuth2Exception.InvalidRequest> {
+                it.server.par(request, it.authenticationFor(it.client, it.clientKey)).getOrThrow()
+            }
+        }
+
+        test("reject a token request that omits the code_verifier") {
+            val state = uuid4().toString()
+            val code = it.codeViaPar(state)
+            shouldThrow<OAuth2Exception.InvalidGrant> {
+                it.server.token(
+                    it.client.createTokenRequestParameters(
+                        state = state,
+                        authorization = OAuth2Client.AuthorizationForToken.Code(code),
+                        scope = it.scope,
+                    ).copy(codeVerifier = null),
+                    it.authenticationFor(it.client, it.clientKey),
+                ).getOrThrow()
+                // assert on the reason, so this does not silently pass on a client binding mismatch
+            }.description.shouldNotBeNull() shouldContain "code verifier"
+        }
+
+        test("advertise S256 as the only supported code_challenge_method") {
+            it.server.metadata().codeChallengeMethodsSupported shouldBe setOf("S256")
         }
     }
 }
