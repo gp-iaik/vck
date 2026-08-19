@@ -70,7 +70,7 @@ internal class OpenId4VpRequestFactory(
     /** Algorithms supported to decrypt responses from wallets and to encrypt request objects. */
     private val supportedJweEncryptionAlgorithms: Set<JweEncryption>,
     /** Encrypts the request object, if the wallet asked us to in its `wallet_metadata`, see [createRequestObject]. */
-    private val encryptRequestObject: EncryptJweFun = EncryptJwe(EphemeralKeyWithoutCert()),
+    private val encryptRequestObject: EncryptJweFun = EncryptJwe(),
 ) {
 
     private val supportedJwsAlgorithms = supportedAlgorithms

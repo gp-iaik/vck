@@ -142,8 +142,7 @@ val JwsServiceTest by matrixSuite {
         }
 
         test("encrypted object can be decrypted") {
-            val encrypterKey = EphemeralKeyWithoutCert()
-            val encrypter = EncryptJwe(encrypterKey)
+            val encrypter = EncryptJwe()
             val decrypterKey = EphemeralKeyWithoutCert()
             val decrypter = DecryptJwe(decrypterKey)
 

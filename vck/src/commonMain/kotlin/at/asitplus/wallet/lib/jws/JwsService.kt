@@ -194,10 +194,8 @@ fun interface EncryptJweFun {
 }
 
 
-/** Create a [JweEncrypted], setting values for [JweHeader]. */
-class EncryptJwe(
-    val keyMaterial: KeyMaterial,
-) : EncryptJweFun {
+/** Create a [JweEncrypted], setting values for [JweHeader], uses ephemeral private keys. */
+class EncryptJwe : EncryptJweFun {
     override suspend operator fun invoke(
         header: JweHeader,
         payload: String,

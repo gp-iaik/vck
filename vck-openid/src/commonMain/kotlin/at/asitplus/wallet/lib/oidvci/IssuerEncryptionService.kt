@@ -31,7 +31,7 @@ import kotlin.jvm.JvmOverloads
  */
 class IssuerEncryptionService @JvmOverloads constructor(
     /** Encrypt credential response, if requested by client or [requireResponseEncryption] is set. */
-    private val encryptCredentialResponse: EncryptJweFun = EncryptJwe(EphemeralKeyWithoutCert()),
+    private val encryptCredentialResponse: EncryptJweFun = EncryptJwe(),
     /** Whether to indicate in [metadataCredentialResponseEncryption] if credential response encryption is required. */
     internal val requireResponseEncryption: Boolean = false,
     /** Algorithms to indicate support for credential response encryption. */

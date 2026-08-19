@@ -116,6 +116,7 @@ Release 8.0.0 (unreleased):
     - Rename existing `ClientAuthenticationService` to `AttestationBasedClientAuthenticationService` and extract an interface
     - Return the validated token from `validateAccessToken()` in `TokenVerificationService` and `OAuth2AuthorizationServerAdapter` as `ValidatedAccessToken`, and move `validCredentialIdentifiers` from `TokenInfo` to `ValidatedAccessToken`
     - Authorize credential requests in `CredentialIssuer` from the `ValidatedAccessToken`
+    - In `EncryptJwe` remove `keyMaterial` as it always relies on ephemeral keys embedded in the JWE header
  - Dependencies:
     - Update to [Signum 3.25.0](https://github.com/a-sit-plus/signum/releases/tag/3.25.0) for HPKE support
 

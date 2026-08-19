@@ -79,8 +79,8 @@ class OpenId4VpHolder @JvmOverloads constructor(
     private val holder: Holder = HolderAgent(keyMaterial),
     @Deprecated("Support for SIOPv2 has been removed")
     private val signIdToken: SignJwtFun<IdToken> = SignJwt(keyMaterial, JwsHeaderCertOrJwk()),
-    /** Encrypts the authn response to the holder using [keyMaterial], if requested. */
-    private val encryptJarm: EncryptJweFun = EncryptJwe(keyMaterial),
+    /** Encrypts the authn response to the verifier, if this has been requested. */
+    private val encryptJarm: EncryptJweFun = EncryptJwe(),
     /** Advertised in [metadata] and compared against holder's requirements. */
     private val supportedAlgorithms: Set<SignatureAlgorithm> = setOf(SignatureAlgorithm.ECDSAwithSHA256),
     /** Signs the session transcript for mDoc responses. */

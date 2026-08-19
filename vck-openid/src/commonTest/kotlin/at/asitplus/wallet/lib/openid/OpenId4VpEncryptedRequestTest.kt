@@ -143,7 +143,7 @@ val OpenId4VpEncryptedRequestTest by matrixSuite {
 
             val foreignKey = EphemeralEncryptionKeyService().createKey().toEncryptionJsonWebKey()
             val holder = f.holder(EphemeralEncryptionKeyService()) { params ->
-                EncryptJwe(EphemeralKeyWithoutCert())(
+                EncryptJwe()(
                     JweHeader(JweAlgorithm.ECDH_ES, JweEncryption.A128GCM, keyId = foreignKey.keyId),
                     jar.invoke(params).getOrThrow(),
                     foreignKey,
@@ -184,7 +184,7 @@ val OpenId4VpEncryptedRequestTest by matrixSuite {
 
             val foreignKey = EphemeralEncryptionKeyService().createKey().toEncryptionJsonWebKey()
             val holder = f.holder(null) { params ->
-                EncryptJwe(EphemeralKeyWithoutCert())(
+                EncryptJwe()(
                     JweHeader(JweAlgorithm.ECDH_ES, JweEncryption.A128GCM, keyId = foreignKey.keyId),
                     jar.invoke(params).getOrThrow(),
                     foreignKey,

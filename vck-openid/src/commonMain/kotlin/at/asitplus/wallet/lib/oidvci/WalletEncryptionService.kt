@@ -41,7 +41,7 @@ class WalletEncryptionService @JvmOverloads constructor(
     /** Whether to encrypt the credential request, if supported by the issuer.*/
     internal val requireRequestEncryption: Boolean = false,
     /** Encrypt credential request, if requested by the issuer. */
-    private val encryptCredentialRequest: EncryptJweFun = EncryptJwe(EphemeralKeyWithoutCert()),
+    private val encryptCredentialRequest: EncryptJweFun = EncryptJwe(),
     /** Algorithms to indicate support for credential response encryption. */
     private val supportedJweAlgorithm: JweAlgorithm = JweAlgorithm.ECDH_ES,
     /** Algorithm to fallback to for credential response encryption. */
