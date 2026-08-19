@@ -82,7 +82,7 @@ class SimpleAuthorizationService @JvmOverloads constructor(
     /** Used to filter authorization details and scopes. */
     private val strategy: AuthorizationServiceStrategy,
     /** Used to load the actual user data during [authorize]. */
-    /** Used to create and verify authorization codes during issuing. */
+    /** Used to create and verify authorization codes issued by [authorize]. */
     private val codeService: CodeService = DefaultCodeService(),
     /** Used in several fields in [OAuth2AuthorizationServerMetadata], to provide endpoint URLs to clients. */
     override val publicContext: String = "https://wallet.a-sit.at/authorization-server",
@@ -150,6 +150,10 @@ class SimpleAuthorizationService @JvmOverloads constructor(
     /** Used to sign JWT introspection responses (RFC 9701). */
     private val signIntrospectionJwt: SignJwtFun<TokenIntrospectionResponse> =
         SignJwt(EphemeralKeyWithoutCert(), JwsHeaderCertOrJwk()),
+    /** Used to create and verify `issuer_state` values of credential offers. */
+    private val issuerStateService: CodeService = DefaultCodeService(),
+    /** Used to create and verify pre-authorized codes, see [providePreAuthorizedCode]. */
+    private val preAuthorizedCodeService: CodeService = DefaultCodeService(),
 ) : OAuth2AuthorizationServerAdapter, AuthorizationService {
 
     init {
@@ -239,7 +243,7 @@ class SimpleAuthorizationService @JvmOverloads constructor(
     private suspend fun buildOfferWithAuthorizationCode(
         credentialIssuer: String,
         configurationIds: Collection<String>,
-    ): CredentialOffer = codeService.provideCode().let { issuerState ->
+    ): CredentialOffer = issuerStateService.provideCode().let { issuerState ->
         CredentialOffer(
             credentialIssuer = credentialIssuer,
             configurationIds = configurationIds.toSet(),
@@ -481,7 +485,7 @@ class SimpleAuthorizationService @JvmOverloads constructor(
         if (validateIssuerState && issuerState != null) {
             // The wallet could have started an auth code flow without any credential offer,
             // so the issuerState may be in fact null.
-            if (!codeService.verifyAndRemove(issuerState!!))
+            if (!issuerStateService.verifyAndRemove(issuerState!!))
                 throw InvalidGrant("issuer_state invalid: $issuerState")
             val credentialOffer = issuerStateToCredentialOffer.remove(issuerState!!)
                 ?: throw InvalidGrant("issuer_state invalid: $issuerState")
@@ -646,7 +650,7 @@ class SimpleAuthorizationService @JvmOverloads constructor(
         }
 
         OpenIdConstants.GRANT_TYPE_PRE_AUTHORIZED_CODE -> {
-            if (preAuthorizedCode == null || !codeService.verifyAndRemove(preAuthorizedCode!!)) {
+            if (preAuthorizedCode == null || !preAuthorizedCodeService.verifyAndRemove(preAuthorizedCode!!)) {
                 throw InvalidGrant("pre-authorized code not valid: $preAuthorizedCode")
             }
             preAuthorizedCode?.let { codeToClientAuthRequest.remove(it) }
@@ -665,7 +669,7 @@ class SimpleAuthorizationService @JvmOverloads constructor(
 
     suspend fun providePreAuthorizedCode(
         userInfo: OidcUserInfoExtended,
-    ): String = codeService.provideCode().also {
+    ): String = preAuthorizedCodeService.provideCode().also {
         codeToClientAuthRequest.put(
             it,
             ClientAuthRequest(

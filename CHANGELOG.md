@@ -90,6 +90,8 @@ Release 8.0.0 (unreleased):
     - Add `dpopKeyMaterial` as explicit constructor argument to `OAuth2KtorClient`
     - Enforce `require_pushed_authorization_requests` in `SimpleAuthorizationService.authorize()` as mandated by [RFC 9126](https://datatracker.ietf.org/doc/html/rfc9126), Section 4
     - Require PKCE with `code_challenge_method=S256` on every authorization request, as mandated by OpenID4VC HAIP, and advertise it in `code_challenge_methods_supported`
+    - Make `CodeService.provideCode()` and `CodeService.verifyAndRemove()` suspending functions, and implement `DefaultCodeService` on top of `NonceService`, so codes are stored thread-safely and expire.
+    - Keep authorization codes, pre-authorized codes and `issuer_state` values in separate stores in `SimpleAuthorizationService`
 - Deprecations:
     - Remove code deprecated in 7.0.0, e.g. various `Iso180137AnnexC*` and related classes
     - Deprecate all classes used for Presentation Exchange requests and so on, e.g., `CredentialPresentationRequest.PresentationExchangeRequest` or `PresentationExchangeCredentialDisclosure` or `CredentialPresentation.PresentationExchangePresentation`
