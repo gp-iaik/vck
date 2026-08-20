@@ -166,7 +166,7 @@ val RedirectUriClientTest by matrixSuite {
             clientIdScheme.redirectUri shouldBe "https://example.com/callback"
             clientIdScheme.chain.size shouldBe 2
         }
-        
+
         "wrong client nonce in vp_token should lead to error" {
             val verifierOid4vp = OpenId4VpVerifier(
                 keyMaterial = it.verifierKeyMaterial,
@@ -315,8 +315,10 @@ val RedirectUriClientTest by matrixSuite {
         }
 
         "test with deserializing" {
-            val authnRequest = it.verifierOid4vp.createPlainAuthnRequest(defaultRequestOptions)
-            val authnRequestUrlParams = authnRequest.encodeToParameters().formUrlEncode()
+            val authnRequest = it.verifierOid4vp
+                .createAuthnRequest(defaultRequestOptions, CreationOptions.Query(it.walletUrl))
+                .getOrThrow()
+            val authnRequestUrlParams = Url(authnRequest.url).encodedQuery
 
             val parsedAuthnRequest: AuthenticationRequestParameters =
                 authnRequestUrlParams.decodeFromUrlQuery()

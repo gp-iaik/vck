@@ -178,11 +178,9 @@ val PreRegisteredClientTest by matrixSuite {
             val authnRequestUrl = it.verifierOid4vp.createAuthnRequest(
                 it.defaultRequestOptions, CreationOptions.SignedRequestByValue(it.walletUrl)
             ).getOrThrow().url
-            val authnRequest: JarRequestParameters =
-                Url(authnRequestUrl).encodedQuery.decodeFromUrlQuery()
+            val authnRequest: JarRequestParameters = Url(authnRequestUrl).encodedQuery.decodeFromUrlQuery()
             authnRequest.clientId shouldBe it.clientId
-            val jar = authnRequest.request
-                .shouldNotBeNull()
+            val jar = authnRequest.request.shouldNotBeNull()
             val jwsObject = JwsCompactTyped<AuthenticationRequestParameters>(jar)
             VerifyJwsObject().invoke(jwsObject.jws).getOrThrow()
 
@@ -272,8 +270,10 @@ val PreRegisteredClientTest by matrixSuite {
         }
 
         "test with deserializing" {
-            val authnRequest = it.verifierOid4vp.createPlainAuthnRequest(it.defaultRequestOptions)
-            val authnRequestUrlParams = authnRequest.encodeToParameters().formUrlEncode()
+            val authnRequest = it.verifierOid4vp
+                .createAuthnRequest(it.defaultRequestOptions, CreationOptions.Query(it.walletUrl))
+                .getOrThrow()
+            val authnRequestUrlParams = Url(authnRequest.url).encodedQuery
 
             val parsedAuthnRequest: AuthenticationRequestParameters =
                 authnRequestUrlParams.decodeFromUrlQuery()

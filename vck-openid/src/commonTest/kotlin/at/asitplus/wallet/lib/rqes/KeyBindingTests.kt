@@ -23,10 +23,11 @@ import at.asitplus.wallet.lib.data.ConstantIndex.CredentialRepresentation.SD_JWT
 import at.asitplus.wallet.lib.data.SdJwtConstants
 import at.asitplus.wallet.lib.data.digest
 import at.asitplus.wallet.lib.data.toBase64UrlJsonString
-import at.asitplus.wallet.lib.oidvci.encodeToParameters
+import at.asitplus.wallet.lib.oidvci.decodeFromUrlQuery
 import at.asitplus.wallet.lib.oidvci.formUrlEncode
 import at.asitplus.wallet.lib.openid.AuthenticationResponseResult
 import at.asitplus.wallet.lib.openid.ClientIdScheme
+import at.asitplus.wallet.lib.openid.CreationOptions
 import at.asitplus.wallet.lib.openid.DummyCredentialDataProvider.issueAndStoreSdJwt
 import at.asitplus.wallet.lib.openid.OpenId4VpHolder
 import at.asitplus.wallet.lib.openid.OpenId4VpVerifier
@@ -82,12 +83,11 @@ val KeyBindingTests by matrixSuite {
                 stateToAuthnRequestStore = it.externalMapStore
             )
             val requestOptions = buildRequestOptions(transactionDataHashAlgorithms = null)
-            val authnRequest = verifierOid4Vp.createPlainAuthnRequest(requestOptions)
 
-            val authnRequestUrl = URLBuilder(it.walletUrl).apply {
-                authnRequest.encodeToParameters()
-                    .forEach { parameters.append(it.key, it.value) }
-            }.buildString().apply {
+            val authnRequestUrl = verifierOid4Vp.createAuthnRequest(
+                requestOptions = requestOptions,
+                creationOptions = CreationOptions.Query(it.walletUrl)
+            ).getOrThrow().url.apply {
                 this shouldContain "transaction_data"
             }
 
@@ -116,14 +116,13 @@ val KeyBindingTests by matrixSuite {
                 stateToAuthnRequestStore = it.externalMapStore
             )
             val requestOptions = buildRequestOptions(transactionDataHashAlgorithms = setOf(SdJwtConstants.SHA_384))
-            val authnRequest = verifierOid4Vp.createPlainAuthnRequest(requestOptions)
 
-            val authnRequestUrl = URLBuilder(it.walletUrl).apply {
-                authnRequest.encodeToParameters()
-                    .forEach { parameters.append(it.key, it.value) }
-            }.buildString()
-
-            authnRequestUrl shouldContain "transaction_data"
+            val authnRequestUrl = verifierOid4Vp.createAuthnRequest(
+                requestOptions = requestOptions,
+                creationOptions = CreationOptions.Query(it.walletUrl)
+            ).getOrThrow().url.apply {
+                this.shouldContain("transaction_data")
+            }
 
             val authnResponse = it.holderOid4vp.createAuthnResponse(authnRequestUrl).getOrThrow()
                 .shouldBeInstanceOf<AuthenticationResponseResult.Redirect>()
@@ -148,15 +147,20 @@ val KeyBindingTests by matrixSuite {
                 clientIdScheme = ClientIdScheme.RedirectUri(it.clientId),
                 stateToAuthnRequestStore = it.externalMapStore
             )
+
             val requestOptions =
                 buildRequestOptions(OpenIdConstants.ResponseMode.DirectPost, setOf(SdJwtConstants.SHA_256))
-            val authnRequest = verifierOid4Vp.createPlainAuthnRequest(requestOptions)
+
+            val authnRequest = verifierOid4Vp.createAuthnRequest(
+                requestOptions = requestOptions,
+                creationOptions = CreationOptions.Query(it.walletUrl)
+            ).getOrThrow().url.run {
+                Url(this).encodedQuery.decodeFromUrlQuery<AuthenticationRequestParameters>()
+            }
 
             val malignResponse = it.holderOid4vp.createAuthnResponse(
                 joseCompliantSerializer.encodeToString(
-                    authnRequest.copy(
-                        transactionData = malignTransactionData()
-                    )
+                    authnRequest.copy(transactionData = malignTransactionData())
                 )
             ).getOrThrow()
                 .shouldBeInstanceOf<AuthenticationResponseResult.Post>()
@@ -180,13 +184,15 @@ val KeyBindingTests by matrixSuite {
             )
 
             val requestOptions = buildRequestOptions(OpenIdConstants.ResponseMode.DirectPost, null)
-            val authnRequest = lenientVerifier.createPlainAuthnRequest(requestOptions)
-
+            val authnRequest = lenientVerifier.createAuthnRequest(
+                requestOptions = requestOptions,
+                creationOptions = CreationOptions.Query(it.walletUrl)
+            ).getOrThrow().url.run {
+                Url(this).encodedQuery.decodeFromUrlQuery<AuthenticationRequestParameters>()
+            }
             val malignResponse = it.holderOid4vp.createAuthnResponse(
                 joseCompliantSerializer.encodeToString(
-                    authnRequest.copy(
-                        transactionData = malignTransactionData()
-                    )
+                    authnRequest.copy(transactionData = malignTransactionData())
                 )
             ).getOrThrow()
                 .shouldBeInstanceOf<AuthenticationResponseResult.Post>()

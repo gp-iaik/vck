@@ -13,7 +13,6 @@ package at.asitplus.wallet.lib.openid
  */
 
 import at.asitplus.data.NonEmptyList.Companion.toNonEmptyList
-import at.asitplus.openid.AuthenticationRequestParameters
 import at.asitplus.openid.dcql.DCQLClaimsPathPointer
 import at.asitplus.openid.dcql.DCQLCredentialQueryIdentifier
 import at.asitplus.openid.dcql.DCQLCredentialQueryList
@@ -21,7 +20,6 @@ import at.asitplus.openid.dcql.DCQLIsoMdocCredentialQuery
 import at.asitplus.openid.dcql.DCQLIsoMdocZkCredentialQuery
 import at.asitplus.openid.dcql.DCQLJwtVcCredentialQuery
 import at.asitplus.openid.dcql.DCQLSdJwtCredentialQuery
-import at.asitplus.signum.indispensable.josef.io.joseCompliantSerializer
 import at.asitplus.testballoon.matrix.fixture
 import at.asitplus.testballoon.matrix.matrixSuite
 import at.asitplus.wallet.eupidsdjwt.EU_PID_SD_JWT_VCT
@@ -61,8 +59,6 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 
-private fun AuthenticationRequestParameters.serialize(): String = joseCompliantSerializer.encodeToString(this)
-
 val OpenId4VpCombinedProtocolTest by matrixSuite {
 
     fixture {
@@ -95,14 +91,15 @@ val OpenId4VpCombinedProtocolTest by matrixSuite {
             issueAndStoreSdJwt(it.holderAgent, it.holderKeyMaterial, ConstantIndex.AtomicAttribute2023)
             issueAndStoreIsoMdoc(it.holderAgent, it.holderKeyMaterial, ConstantIndex.AtomicAttribute2023)
 
-            val authnRequest = it.verifierOid4vp.createPlainAuthnRequest(
-                OpenId4VpRequestOptions(
+            val authnRequest = it.verifierOid4vp.createAuthnRequest(
+                requestOptions = OpenId4VpRequestOptions(
                     CredentialPresentationRequestBuilder(
                         RequestOptionsCredential(ConstantIndex.AtomicAttribute2023, PLAIN_JWT)
                     ).toDCQLRequest()
-                )
-            )
-            it.holderOid4vp.createAuthnResponse(authnRequest.serialize()).getOrThrow()
+                ),
+                creationOptions = CreationOptions.Query("https://example.com")
+            ).getOrThrow().url
+            it.holderOid4vp.createAuthnResponse(authnRequest).getOrThrow()
                 .shouldBeInstanceOf<AuthenticationResponseResult.Redirect>()
                 .error.shouldNotBeNull()
         }
@@ -113,16 +110,18 @@ val OpenId4VpCombinedProtocolTest by matrixSuite {
             issueAndStoreSdJwt(it.holderAgent, it.holderKeyMaterial, ConstantIndex.AtomicAttribute2023)
             issueAndStoreIsoMdoc(it.holderAgent, it.holderKeyMaterial, ConstantIndex.AtomicAttribute2023)
 
-            val authnRequest = it.verifierOid4vp.createPlainAuthnRequest(
-                OpenId4VpRequestOptions(
+
+            val authnRequest = it.verifierOid4vp.createAuthnRequest(
+                requestOptions = OpenId4VpRequestOptions(
                     CredentialPresentationRequestBuilder(
                         RequestOptionsCredential(ConstantIndex.AtomicAttribute2023, PLAIN_JWT)
-                    ).toDCQLRequest(),
-                )
-            )
+                    ).toDCQLRequest()
+                ),
+                creationOptions = CreationOptions.Query("https://example.com")
+            ).getOrThrow().url
 
             val authnResponse =
-                it.holderOid4vp.createAuthnResponse(authnRequest.serialize()).getOrThrow()
+                it.holderOid4vp.createAuthnResponse(authnRequest).getOrThrow()
                     .shouldBeInstanceOf<AuthenticationResponseResult.Redirect>()
 
             it.verifierOid4vp.validateAuthnResponse(authnResponse.url).getOrThrow()
@@ -147,29 +146,32 @@ val OpenId4VpCombinedProtocolTest by matrixSuite {
             issueAndStoreSdJwt(it.holderAgent, it.holderKeyMaterial, ConstantIndex.AtomicAttribute2023)
             issueAndStoreIsoMdoc(it.holderAgent, it.holderKeyMaterial, ConstantIndex.AtomicAttribute2023)
 
-            val authnRequest = it.verifierOid4vp.createPlainAuthnRequest(
-                OpenId4VpRequestOptions(
-                    CredentialPresentationRequestBuilder(
-                        RequestOptionsCredential(ConstantIndex.AtomicAttribute2023, PLAIN_JWT)
-                    ).toDCQLRequest()?.let {
-                        CredentialPresentationRequest.DCQLRequest(
-                            it.dcqlQuery.copy(
-                                credentials = DCQLCredentialQueryList(
-                                    it.dcqlQuery.credentials.map {
-                                        it as DCQLJwtVcCredentialQuery
-                                    }.map {
-                                        it.copy(
-                                            requireCryptographicHolderBinding = false
-                                        )
-                                    }.toNonEmptyList()
-                                )
+            val requestOptions = OpenId4VpRequestOptions(
+                CredentialPresentationRequestBuilder(
+                    RequestOptionsCredential(ConstantIndex.AtomicAttribute2023, PLAIN_JWT)
+                ).toDCQLRequest()?.let {
+                    CredentialPresentationRequest.DCQLRequest(
+                        it.dcqlQuery.copy(
+                            credentials = DCQLCredentialQueryList(
+                                it.dcqlQuery.credentials.map {
+                                    it as DCQLJwtVcCredentialQuery
+                                }.map {
+                                    it.copy(
+                                        requireCryptographicHolderBinding = false
+                                    )
+                                }.toNonEmptyList()
                             )
                         )
-                    },
-                )
+                    )
+                },
             )
 
-            val authnResponse = it.holderOid4vp.createAuthnResponse(authnRequest.serialize()).getOrThrow()
+            val authnRequest = it.verifierOid4vp.createAuthnRequest(
+                requestOptions = requestOptions,
+                creationOptions = CreationOptions.Query("https://example.com")
+            ).getOrThrow().url
+
+            val authnResponse = it.holderOid4vp.createAuthnResponse(authnRequest).getOrThrow()
                 .shouldBeInstanceOf<AuthenticationResponseResult.Redirect>()
 
             val vcFreshnessSummary = it.verifierOid4vp.validateAuthnResponse(authnResponse.url).getOrThrow()
@@ -189,15 +191,16 @@ val OpenId4VpCombinedProtocolTest by matrixSuite {
             issueAndStoreSdJwt(it.holderAgent, it.holderKeyMaterial, it.euPidSdJwtScheme)
             issueAndStoreIsoMdoc(it.holderAgent, it.holderKeyMaterial, ConstantIndex.AtomicAttribute2023)
 
-            val authnRequest = it.verifierOid4vp.createPlainAuthnRequest(
-                OpenId4VpRequestOptions(
+            val authnRequest = it.verifierOid4vp.createAuthnRequest(
+                requestOptions = OpenId4VpRequestOptions(
                     CredentialPresentationRequestBuilder(
                         RequestOptionsCredential(ConstantIndex.AtomicAttribute2023, SD_JWT)
-                    ).toDCQLRequest(),
+                    ).toDCQLRequest()
                 ),
-            )
+                creationOptions = CreationOptions.Query("https://example.com")
+            ).getOrThrow().url
 
-            it.holderOid4vp.createAuthnResponse(authnRequest.serialize()).getOrThrow()
+            it.holderOid4vp.createAuthnResponse(authnRequest).getOrThrow()
                 .shouldBeInstanceOf<AuthenticationResponseResult.Redirect>()
                 .error.shouldNotBeNull()
         }
@@ -208,15 +211,16 @@ val OpenId4VpCombinedProtocolTest by matrixSuite {
             issueAndStoreSdJwt(it.holderAgent, it.holderKeyMaterial, it.euPidSdJwtScheme)
             issueAndStoreIsoMdoc(it.holderAgent, it.holderKeyMaterial, ConstantIndex.AtomicAttribute2023)
 
-            val authnRequest = it.verifierOid4vp.createPlainAuthnRequest(
-                OpenId4VpRequestOptions(
+            val authnRequest = it.verifierOid4vp.createAuthnRequest(
+                requestOptions = OpenId4VpRequestOptions(
                     CredentialPresentationRequestBuilder(
                         RequestOptionsCredential(ConstantIndex.AtomicAttribute2023, SD_JWT)
-                    ).toDCQLRequest(),
+                    ).toDCQLRequest()
                 ),
-            )
+                creationOptions = CreationOptions.Query("https://example.com")
+            ).getOrThrow().url
 
-            val authnResponse = it.holderOid4vp.createAuthnResponse(authnRequest.serialize()).getOrThrow()
+            val authnResponse = it.holderOid4vp.createAuthnResponse(authnRequest).getOrThrow()
                 .shouldBeInstanceOf<AuthenticationResponseResult.Redirect>()
 
             it.verifierOid4vp.validateAuthnResponse(authnResponse.url).getOrThrow()
@@ -234,15 +238,16 @@ val OpenId4VpCombinedProtocolTest by matrixSuite {
             issueAndStoreSdJwt(it.holderAgent, it.holderKeyMaterial, ConstantIndex.AtomicAttribute2023)
             issueAndStoreIsoMdoc(it.holderAgent, it.holderKeyMaterial, it.mdlScheme)
 
-            val authnRequest = it.verifierOid4vp.createPlainAuthnRequest(
-                OpenId4VpRequestOptions(
+            val authnRequest = it.verifierOid4vp.createAuthnRequest(
+                requestOptions = OpenId4VpRequestOptions(
                     CredentialPresentationRequestBuilder(
                         RequestOptionsCredential(ConstantIndex.AtomicAttribute2023, ISO_MDOC)
-                    ).toDCQLRequest(),
+                    ).toDCQLRequest()
                 ),
-            )
+                creationOptions = CreationOptions.Query("https://example.com")
+            ).getOrThrow().url
 
-            it.holderOid4vp.createAuthnResponse(authnRequest.serialize()).getOrThrow()
+            it.holderOid4vp.createAuthnResponse(authnRequest).getOrThrow()
                 .shouldBeInstanceOf<AuthenticationResponseResult.Redirect>()
                 .error.shouldNotBeNull()
         }
@@ -253,15 +258,16 @@ val OpenId4VpCombinedProtocolTest by matrixSuite {
             issueAndStoreIsoMdoc(it.holderAgent, it.holderKeyMaterial, ConstantIndex.AtomicAttribute2023)
             issueAndStoreIsoMdoc(it.holderAgent, it.holderKeyMaterial, it.mdlScheme)
 
-            val authnRequest = it.verifierOid4vp.createPlainAuthnRequest(
-                OpenId4VpRequestOptions(
+            val authnRequest = it.verifierOid4vp.createAuthnRequest(
+                requestOptions = OpenId4VpRequestOptions(
                     CredentialPresentationRequestBuilder(
                         RequestOptionsCredential(ConstantIndex.AtomicAttribute2023, ISO_MDOC)
-                    ).toDCQLRequest(),
+                    ).toDCQLRequest()
                 ),
-            )
+                creationOptions = CreationOptions.Query("https://example.com")
+            ).getOrThrow().url
 
-            val authnResponse = it.holderOid4vp.createAuthnResponse(authnRequest.serialize()).getOrThrow()
+            val authnResponse = it.holderOid4vp.createAuthnResponse(authnRequest).getOrThrow()
                 .shouldBeInstanceOf<AuthenticationResponseResult.Redirect>()
 
             it.verifierOid4vp.validateAuthnResponse(authnResponse.url).getOrThrow()
@@ -280,10 +286,13 @@ val OpenId4VpCombinedProtocolTest by matrixSuite {
                 RequestOptionsCredential(ConstantIndex.AtomicAttribute2023, ISO_MDOC)
             ).toDCQLRequest().shouldNotBeNull()
 
-            val authnRequest = it.verifierOid4vp.createPlainAuthnRequest(OpenId4VpRequestOptions(dcqlRequest))
+            val authnRequest = it.verifierOid4vp.createAuthnRequest(
+                requestOptions = OpenId4VpRequestOptions(dcqlRequest),
+                creationOptions = CreationOptions.Query("https://example.com")
+            ).getOrThrow().url
 
             val preparationState =
-                it.holderOid4vp.startAuthorizationResponsePreparation(authnRequest.serialize()).getOrThrow()
+                it.holderOid4vp.startAuthorizationResponsePreparation(authnRequest).getOrThrow()
 
             val matchesWithBadQueryIdentifiers = it.holderAgent
                 .matchPresentationRequestAgainstCredentialStore(dcqlRequest).getOrThrow()
@@ -311,23 +320,26 @@ val OpenId4VpCombinedProtocolTest by matrixSuite {
             issueAndStoreIsoMdoc(it.holderAgent, it.holderKeyMaterial, ConstantIndex.AtomicAttribute2023)
             issueAndStoreIsoMdoc(it.holderAgent, it.holderKeyMaterial, it.mdlScheme)
 
-            val originalDcqlRequest = CredentialPresentationRequestBuilder(
+            val dcqlRequest = CredentialPresentationRequestBuilder(
                 RequestOptionsCredential(ConstantIndex.AtomicAttribute2023, ISO_MDOC)
             ).toDCQLRequest().shouldNotBeNull()
 
-            val authnRequest = it.verifierOid4vp.createPlainAuthnRequest(OpenId4VpRequestOptions(originalDcqlRequest))
+            val authnRequest = it.verifierOid4vp.createAuthnRequest(
+                requestOptions = OpenId4VpRequestOptions(dcqlRequest),
+                creationOptions = CreationOptions.Query("https://example.com")
+            ).getOrThrow().url
 
             val preparationState =
-                it.holderOid4vp.startAuthorizationResponsePreparation(authnRequest.serialize()).getOrThrow()
+                it.holderOid4vp.startAuthorizationResponsePreparation(authnRequest).getOrThrow()
 
             val otherDcqlQuery = CredentialPresentationRequestBuilder(
                 RequestOptionsCredential(ConstantIndex.AtomicAttribute2023, SD_JWT)
             ).toDCQLRequest().shouldNotBeNull().dcqlQuery
 
             val otherQueryWithOriginalIds = CredentialPresentationRequest.DCQLRequest(
-                originalDcqlRequest.dcqlQuery.copy(
+                dcqlRequest.dcqlQuery.copy(
                     credentials = DCQLCredentialQueryList(
-                        originalDcqlRequest.dcqlQuery.credentials.zip(otherDcqlQuery.credentials) { good, bad ->
+                        dcqlRequest.dcqlQuery.credentials.zip(otherDcqlQuery.credentials) { good, bad ->
                             when (bad) {
                                 is DCQLIsoMdocCredentialQuery -> bad.copy(id = good.id)
                                 is DCQLIsoMdocZkCredentialQuery -> bad.copy(id = good.id)
@@ -351,7 +363,7 @@ val OpenId4VpCombinedProtocolTest by matrixSuite {
             val authnResponse = it.holderOid4vp.finalizeAuthorizationResponse(
                 preparationState = preparationState,
                 credentialPresentation = CredentialPresentation.DCQLPresentation(
-                    presentationRequest = originalDcqlRequest,
+                    presentationRequest = dcqlRequest,
                     credentialQuerySubmissions = badMatches
                 ),
             ).getOrThrow()
@@ -373,10 +385,12 @@ val OpenId4VpCombinedProtocolTest by matrixSuite {
                 RequestOptionsCredential(ConstantIndex.AtomicAttribute2023, ISO_MDOC)
             ).toDCQLRequest().shouldNotBeNull()
 
-            val authnRequest = it.verifierOid4vp.createPlainAuthnRequest(OpenId4VpRequestOptions(dcqlRequest))
+            val authnRequest = it.verifierOid4vp.createAuthnRequest(
+                requestOptions = OpenId4VpRequestOptions(dcqlRequest),
+                creationOptions = CreationOptions.Query("https://example.com")
+            ).getOrThrow().url
 
-            val preparationState =
-                it.holderOid4vp.startAuthorizationResponsePreparation(authnRequest.serialize()).getOrThrow()
+            val preparationState = it.holderOid4vp.startAuthorizationResponsePreparation(authnRequest).getOrThrow()
 
             val goodMatches = it.holderAgent
                 .matchPresentationRequestAgainstCredentialStore(dcqlRequest).getOrThrow()
@@ -402,15 +416,15 @@ val OpenId4VpCombinedProtocolTest by matrixSuite {
             issueAndStorePlainJwt(it.holderAgent, it.holderKeyMaterial, ConstantIndex.AtomicAttribute2023)
             issueAndStoreIsoMdoc(it.holderAgent, it.holderKeyMaterial, it.mdlScheme)
 
-            val authnRequest = it.verifierOid4vp.createPlainAuthnRequest(
-                OpenId4VpRequestOptions(
-                    CredentialPresentationRequestBuilder(
-                        RequestOptionsCredential(ConstantIndex.AtomicAttribute2023, PLAIN_JWT),
-                        RequestOptionsCredential(it.mdlScheme, ISO_MDOC)
-                    ).toDCQLRequest(),
-                ),
-            )
-            val authnResponse = it.holderOid4vp.createAuthnResponse(authnRequest.serialize()).getOrThrow()
+            val authnRequest = it.verifierOid4vp.createAuthnRequest(
+                requestOptions = OpenId4VpRequestOptions(CredentialPresentationRequestBuilder(
+                    RequestOptionsCredential(ConstantIndex.AtomicAttribute2023, PLAIN_JWT),
+                    RequestOptionsCredential(it.mdlScheme, ISO_MDOC)
+                ).toDCQLRequest(),),
+                creationOptions = CreationOptions.Query("https://example.com")
+            ).getOrThrow().url
+
+            val authnResponse = it.holderOid4vp.createAuthnResponse(authnRequest).getOrThrow()
                 .shouldBeInstanceOf<AuthenticationResponseResult.Redirect>()
 
             it.verifierOid4vp.validateAuthnResponse(authnResponse.url).getOrThrow()
@@ -440,9 +454,13 @@ val OpenId4VpCombinedProtocolTest by matrixSuite {
                     )
                 ).toDCQLRequest(),
             )
-            val authnRequest = it.verifierOid4vp.createPlainAuthnRequest(requestOptions)
 
-            val authnResponse = it.holderOid4vp.createAuthnResponse(authnRequest.serialize()).getOrThrow()
+            val authnRequest = it.verifierOid4vp.createAuthnRequest(
+                requestOptions = requestOptions,
+                creationOptions = CreationOptions.Query("https://example.com")
+            ).getOrThrow().url
+
+            val authnResponse = it.holderOid4vp.createAuthnResponse(authnRequest).getOrThrow()
                 .shouldBeInstanceOf<AuthenticationResponseResult.Redirect>()
 
             val groupedResult = it.verifierOid4vp.validateAuthnResponse(authnResponse.url).getOrThrow()

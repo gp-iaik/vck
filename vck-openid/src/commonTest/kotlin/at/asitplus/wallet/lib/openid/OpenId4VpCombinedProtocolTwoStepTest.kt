@@ -19,10 +19,6 @@ import at.asitplus.wallet.lib.data.ConstantIndex.CredentialRepresentation.ISO_MD
 import at.asitplus.wallet.lib.data.ConstantIndex.CredentialRepresentation.SD_JWT
 import at.asitplus.wallet.lib.data.CredentialPresentation.DCQLPresentation
 import at.asitplus.wallet.lib.data.CredentialPresentationRequest.DCQLRequest
-import at.asitplus.wallet.lib.data.CredentialScheme
-import at.asitplus.wallet.lib.data.rfc3986.toUri
-import at.asitplus.wallet.lib.data.CredentialPresentation.PresentationExchangePresentation
-import at.asitplus.wallet.lib.data.CredentialPresentationRequest.PresentationExchangeRequest
 import at.asitplus.wallet.lib.openid.DummyCredentialDataProvider.issueAndStoreIsoMdoc
 import at.asitplus.wallet.lib.openid.DummyCredentialDataProvider.issueAndStoreSdJwt
 import com.benasher44.uuid.uuid4
@@ -58,14 +54,17 @@ val OpenId4VpCombinedProtocolTwoStepTest by matrixSuite {
             issueAndStoreIsoMdoc(it.holderAgent, it.holderKeyMaterial, AtomicAttribute2023)
             issueAndStoreSdJwt(it.holderAgent, it.holderKeyMaterial, AtomicAttribute2023)
 
-            val authnRequest = it.verifierOid4vp.createPlainAuthnRequest(
-                OpenId4VpRequestOptions(
+
+            val authnRequest = it.verifierOid4vp.createAuthnRequest(
+                requestOptions = OpenId4VpRequestOptions(
                     CredentialPresentationRequestBuilder(
                         RequestOptionsCredential(AtomicAttribute2023, ISO_MDOC)
                     ).toDCQLRequest(),
-                )
-            )
-            val preparationState = it.holderOid4vp.startAuthorizationResponsePreparation(authnRequest.serialize())
+                ),
+                creationOptions = CreationOptions.Query("https://example.com")
+            ).getOrThrow().url
+
+            val preparationState = it.holderOid4vp.startAuthorizationResponsePreparation(authnRequest)
                 .getOrThrow()
             val dcqlQuery = preparationState.credentialPresentationRequest
                 .shouldBeInstanceOf<DCQLRequest>()
@@ -91,17 +90,18 @@ val OpenId4VpCombinedProtocolTwoStepTest by matrixSuite {
             issueAndStoreIsoMdoc(it.holderAgent, it.holderKeyMaterial, AtomicAttribute2023)
             issueAndStoreSdJwt(it.holderAgent, it.holderKeyMaterial, AtomicAttribute2023)
 
-            val authnRequest = it.verifierOid4vp.createPlainAuthnRequest(
-                OpenId4VpRequestOptions(
+
+            val authnRequest = it.verifierOid4vp.createAuthnRequest(
+                requestOptions = OpenId4VpRequestOptions(
                     CredentialPresentationRequestBuilder(
                         RequestOptionsCredential(AtomicAttribute2023, ISO_MDOC)
                     ).toDCQLRequest(),
-                )
-            )
+                ),
+                creationOptions = CreationOptions.Query("https://example.com")
+            ).getOrThrow().url
 
-            val preparationState =
-                it.holderOid4vp.startAuthorizationResponsePreparation(authnRequest.serialize())
-                    .getOrThrow()
+            val preparationState = it.holderOid4vp.startAuthorizationResponsePreparation(authnRequest)
+                .getOrThrow()
             val dcqlRequest = preparationState.credentialPresentationRequest
                 .shouldBeInstanceOf<DCQLRequest>()
             val credentialQueryId = dcqlRequest.dcqlQuery.credentials.first().id
@@ -133,8 +133,8 @@ val OpenId4VpCombinedProtocolTwoStepTest by matrixSuite {
         test("submission requirements need to match: not all optional claims need to be presented") {
             issueAndStoreIsoMdoc(it.holderAgent, it.holderKeyMaterial, AtomicAttribute2023)
 
-            val authnRequest = it.verifierOid4vp.createPlainAuthnRequest(
-                OpenId4VpRequestOptions(
+            val authnRequest = it.verifierOid4vp.createAuthnRequest(
+                requestOptions = OpenId4VpRequestOptions(
                     CredentialPresentationRequestBuilder(
                         RequestOptionsCredential(
                             credentialScheme = AtomicAttribute2023,
@@ -145,12 +145,12 @@ val OpenId4VpCombinedProtocolTwoStepTest by matrixSuite {
                             ),
                         )
                     ).toDCQLRequest(),
-                )
-            )
+                ),
+                creationOptions = CreationOptions.Query("https://example.com")
+            ).getOrThrow().url
 
-            val preparationState =
-                it.holderOid4vp.startAuthorizationResponsePreparation(authnRequest.serialize())
-                    .getOrThrow()
+            val preparationState = it.holderOid4vp.startAuthorizationResponsePreparation(authnRequest)
+                .getOrThrow()
             val dcqlRequest = preparationState.credentialPresentationRequest
                 .shouldBeInstanceOf<DCQLRequest>()
             val credentialQueryId = dcqlRequest.dcqlQuery.credentials.first().id
@@ -212,17 +212,17 @@ val OpenId4VpCombinedProtocolTwoStepTest by matrixSuite {
                         .credential.shouldBeInstanceOf<SubjectCredentialStore.StoreEntry.SdJwt>()
                 }
 
-            val authnRequest = it.verifierOid4vp.createPlainAuthnRequest(
-                OpenId4VpRequestOptions(
+            val authnRequest = it.verifierOid4vp.createAuthnRequest(
+                requestOptions = OpenId4VpRequestOptions(
                     CredentialPresentationRequestBuilder(
                         RequestOptionsCredential(AtomicAttribute2023, ISO_MDOC)
                     ).toDCQLRequest(),
-                )
-            )
+                ),
+                creationOptions = CreationOptions.Query("https://example.com")
+            ).getOrThrow().url
 
-            val preparationState =
-                it.holderOid4vp.startAuthorizationResponsePreparation(authnRequest.serialize())
-                    .getOrThrow()
+            val preparationState = it.holderOid4vp.startAuthorizationResponsePreparation(authnRequest)
+                .getOrThrow()
             val dcqlRequest = preparationState.credentialPresentationRequest
                 .shouldBeInstanceOf<DCQLRequest>()
             val credentialQueryId = dcqlRequest.dcqlQuery.credentials.first().id

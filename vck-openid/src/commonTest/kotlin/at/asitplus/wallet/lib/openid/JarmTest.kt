@@ -4,8 +4,10 @@ import at.asitplus.openid.AuthenticationRequestParameters
 import at.asitplus.openid.OpenIdConstants
 import at.asitplus.openid.RelyingPartyMetadata
 import at.asitplus.openid.dcql.DCQLClaimsPathPointer
+import at.asitplus.signum.indispensable.SignatureAlgorithm
 import at.asitplus.signum.indispensable.josef.JsonWebKey
 import at.asitplus.signum.indispensable.josef.JweAlgorithm
+import at.asitplus.signum.indispensable.josef.JweEncryption
 import at.asitplus.signum.indispensable.josef.io.joseCompliantSerializer
 import at.asitplus.testballoon.matrix.fixture
 import at.asitplus.testballoon.matrix.matrixSuite
@@ -21,6 +23,7 @@ import at.asitplus.wallet.lib.data.ConstantIndex.AtomicAttribute2023.CLAIM_GIVEN
 import at.asitplus.wallet.lib.data.ConstantIndex.CredentialRepresentation.SD_JWT
 import at.asitplus.wallet.lib.data.rfc3986.toUri
 import at.asitplus.wallet.lib.extensions.getEncryptionTargetKey
+import at.asitplus.wallet.lib.jws.SignJwt
 import at.asitplus.wallet.lib.oidvci.OAuth2Exception
 import at.asitplus.wallet.lib.oidvci.formUrlEncode
 import at.asitplus.wallet.lib.openid.DummyCredentialDataProvider.issueAndStorePlainJwt
@@ -30,7 +33,6 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
-import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.types.shouldBeInstanceOf
 import kotlinx.coroutines.runBlocking
 
@@ -58,6 +60,19 @@ val JarmTest by matrixSuite {
                     keyMaterial = verifierKeyMaterial,
                     clientIdScheme = ClientIdScheme.RedirectUri(clientId)
                 )
+                val requestFactory = OpenId4VpRequestFactory(
+                    clientIdScheme = ClientIdScheme.RedirectUri(clientId),
+                    ephemeralEncryptionKeyService = EphemeralEncryptionKeyService(),
+                    decryptionKeyMaterial = null,
+                    signAuthnRequest = SignJwt(
+                        verifierKeyMaterial,
+                        JwsHeaderClientIdScheme(ClientIdScheme.RedirectUri(clientId))
+                    ),
+                    nonceService = DefaultNonceService(),
+                    supportedAlgorithms = setOf(SignatureAlgorithm.ECDSAwithSHA256),
+                    stateToAuthnRequestStore = DefaultMapStore(),
+                    supportedJweEncryptionAlgorithms = JweEncryption.entries.toSet(),
+                )
             }
         }
     } - {
@@ -66,7 +81,7 @@ val JarmTest by matrixSuite {
          * Incorrect behaviour arises when the [RelyingPartyMetadata.jsonWebKeySet] cannot be retrieved.
          */
         "DirectPostJwt must either be signed or encrypted" {
-            val authnRequest = it.verifierOid4vp.createPlainAuthnRequest(
+            val authnRequest = it.requestFactory.createPlainAuthnRequest(
                 OpenId4VpRequestOptions(
                     presentationRequest = CredentialPresentationRequestBuilder(
                         RequestOptionsCredential(
@@ -97,8 +112,8 @@ val JarmTest by matrixSuite {
          * Request passed via client metadata as specified in Section 8.3 of OpenID4VP"*.
          */
         "every request carries its own ephemeral encryption key" {
-            val first = it.verifierOid4vp.createPlainAuthnRequest(directPostJwtOptions()).encryptionKey()
-            val second = it.verifierOid4vp.createPlainAuthnRequest(directPostJwtOptions()).encryptionKey()
+            val first = it.requestFactory.createPlainAuthnRequest(directPostJwtOptions()).encryptionKey()
+            val second = it.requestFactory.createPlainAuthnRequest(directPostJwtOptions()).encryptionKey()
 
             first.publicKeyUse shouldBe "enc"
             first.algorithm shouldBe JweAlgorithm.ECDH_ES
@@ -122,9 +137,12 @@ val JarmTest by matrixSuite {
                 )
             }
 
-            val authnRequest = newInstance().createPlainAuthnRequest(directPostJwtOptions())
-            val authnResponse = it.holderOid4vp
-                .createAuthnResponse(joseCompliantSerializer.encodeToString(authnRequest)).getOrThrow()
+            val authnRequest = newInstance().createAuthnRequest(
+                requestOptions = directPostJwtOptions(),
+                creationOptions = CreationOptions.Query("https://example.com")
+            ).getOrThrow().url
+
+            val authnResponse = it.holderOid4vp.createAuthnResponse(authnRequest).getOrThrow()
                 .shouldBeInstanceOf<AuthenticationResponseResult.Post>()
 
             newInstance().validateAuthnResponse(authnResponse.params.formUrlEncode()).getOrThrow()

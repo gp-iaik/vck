@@ -11,7 +11,6 @@ import at.asitplus.openid.ResponseParametersFrom
 import at.asitplus.rfc6749OAuth2AuthorizationFramework.ResponseType
 import at.asitplus.signum.indispensable.SignatureAlgorithm
 import at.asitplus.signum.indispensable.josef.JweEncryption
-import at.asitplus.signum.indispensable.josef.JwsCompactTyped
 import at.asitplus.signum.indispensable.josef.io.joseCompliantSerializer
 import at.asitplus.wallet.lib.DefaultNonceService
 import at.asitplus.wallet.lib.MdocDeviceSignatureVerifier
@@ -32,6 +31,9 @@ import at.asitplus.wallet.lib.jws.SignJwtFun
 import at.asitplus.wallet.lib.jws.VerifyJwsObject
 import at.asitplus.wallet.lib.jws.VerifyJwsObjectFun
 import at.asitplus.wallet.lib.oidvci.encodeToParameters
+import at.asitplus.wallet.lib.openid.ClientIdScheme.CertificateHash
+import at.asitplus.wallet.lib.openid.ClientIdScheme.CertificateSanDns
+import at.asitplus.wallet.lib.openid.ClientIdScheme.RedirectUri
 import at.asitplus.wallet.lib.utils.DefaultMapStore
 import at.asitplus.wallet.lib.utils.MapStore
 import io.github.aakira.napier.Napier
@@ -67,7 +69,7 @@ class OpenId4VpVerifier @JvmOverloads constructor(
     @Deprecated("Will be derived from [ephemeralEncryptionKeyService] and [decryptionKeyMaterial]")
     private val decryptJwe: DecryptJweFun =
         DecryptJweWithEphemeralKey(ephemeralEncryptionKeyService, decryptionKeyMaterial),
-    /** Signs authentication requests in [createSignedRequestObject]. */
+    /** Signs authentication requests in [OpenId4VpRequestFactory]. */
     private val signAuthnRequest: SignJwtFun<AuthenticationRequestParameters> =
         SignJwt(keyMaterial, JwsHeaderClientIdScheme(clientIdScheme)),
     /** Validates signed responses from holders. */
@@ -136,15 +138,19 @@ class OpenId4VpVerifier @JvmOverloads constructor(
     ): KmmResult<CreatedRequest> = catching {
         when (creationOptions) {
             is CreationOptions.Query -> {
-                require(clientIdScheme !is ClientIdScheme.CertificateSanDns) // per OpenID4VP d23 5.10.4
+                require(clientIdScheme !is CertificateHash && clientIdScheme !is CertificateSanDns) {
+                    "Requests using x509_hash or x509_san_dns client schemes must be signed"
+                }
                 URLBuilder(creationOptions.walletUrl).apply {
-                    createPlainAuthnRequest(requestOptions).encodeToParameters()
+                    requestFactory.createPlainAuthnRequest(requestOptions).encodeToParameters()
                         .forEach { parameters.append(it.key, it.value) }
                 }.buildString().toCreatedRequest()
             }
 
             is CreationOptions.RequestByReference -> {
-                require(clientIdScheme !is ClientIdScheme.CertificateSanDns) // per OpenID4VP d23 5.10.4
+                require(clientIdScheme !is CertificateHash && clientIdScheme !is CertificateSanDns) {
+                    "Requests using x509_hash or x509_san_dns client schemes must be signed"
+                }
                 URLBuilder(creationOptions.walletUrl).apply {
                     JarRequestParameters(
                         clientId = clientIdScheme.clientId,
@@ -154,24 +160,33 @@ class OpenId4VpVerifier @JvmOverloads constructor(
                         .forEach { parameters.append(it.key, it.value) }
                 }.buildString().toCreatedRequest {
                     catching {
-                        joseCompliantSerializer.encodeToString(createPlainAuthnRequest(requestOptions, it))
+                        joseCompliantSerializer.encodeToString(
+                            requestFactory.createPlainAuthnRequest(requestOptions, it)
+                        )
                     }
                 }
             }
 
             is CreationOptions.SignedRequestByValue -> {
-                require(clientIdScheme !is ClientIdScheme.RedirectUri) // per OpenID4VP d23 5.10.4
+                require(clientIdScheme !is RedirectUri) {
+                    "Requests using redirect_uri client scheme can't be signed per OpenID4VP 1.0 5.9.3."
+                }
                 URLBuilder(creationOptions.walletUrl).apply {
                     JarRequestParameters(
                         clientId = clientIdScheme.clientId,
-                        request = createSignedRequestObject(requestOptions).getOrThrow().toString(),
+                        request = requestFactory.createSignedRequestObject(
+                            requestOptions,
+                            RequestObjectSigning.Redirect
+                        ).getOrThrow().toString(),
                     ).encodeToParameters()
                         .forEach { parameters.append(it.key, it.value) }
                 }.buildString().toCreatedRequest()
             }
 
             is CreationOptions.SignedRequestByReference -> {
-                require(clientIdScheme !is ClientIdScheme.RedirectUri) // per OpenID4VP d23 5.10.4
+                require(clientIdScheme !is RedirectUri) {
+                    "Requests using redirect_uri client scheme can't be signed per OpenID4VP 1.0 5.9.3."
+                }
                 URLBuilder(creationOptions.walletUrl).apply {
                     JarRequestParameters(
                         clientId = clientIdScheme.clientId,
@@ -191,17 +206,6 @@ class OpenId4VpVerifier @JvmOverloads constructor(
     private fun String.toCreatedRequest(
         loadRequestObject: suspend (RequestObjectParameters?) -> KmmResult<String>,
     ) = CreatedRequest(this, loadRequestObject)
-
-    internal suspend fun createSignedRequestObject(
-        requestOptions: OpenId4VpRequestOptions,
-        requestObjectParameters: RequestObjectParameters? = null,
-    ): KmmResult<JwsCompactTyped<AuthenticationRequestParameters>> =
-        requestFactory.createSignedRequestObject(requestOptions, RequestObjectSigning.Redirect, requestObjectParameters)
-
-    internal suspend fun createPlainAuthnRequest(
-        requestOptions: OpenId4VpRequestOptions,
-        requestObjectParameters: RequestObjectParameters? = null,
-    ) = requestFactory.createPlainAuthnRequest(requestOptions, requestObjectParameters)
 
     /**
      * Validates an Authentication Response from the Wallet, where [input] is either:

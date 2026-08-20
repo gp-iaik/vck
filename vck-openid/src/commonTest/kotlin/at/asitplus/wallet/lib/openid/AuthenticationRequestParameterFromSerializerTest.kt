@@ -3,6 +3,7 @@ package at.asitplus.wallet.lib.openid
 import at.asitplus.dif.DifInputDescriptor
 import at.asitplus.openid.AuthenticationRequestParameters
 import at.asitplus.openid.JarRequestParameters
+import at.asitplus.openid.RequestObjectParameters
 import at.asitplus.openid.RequestParametersFrom
 import at.asitplus.signum.indispensable.josef.JweAlgorithm
 import at.asitplus.signum.indispensable.josef.JweEncryption
@@ -41,6 +42,7 @@ val AuthenticationRequestParameterFromSerializerTest by matrixSuite {
         clientIdScheme = ClientIdScheme.PreRegistered(clientId, redirectUrl),
     )
     val representations = listOf(PLAIN_JWT, SD_JWT, ISO_MDOC)
+    val byReference = CreationOptions.RequestByReference("https://example.com", "https://example.com")
 
     representations.forEach { representation ->
         val reqOptions = OpenId4VpRequestOptions(
@@ -65,9 +67,8 @@ val AuthenticationRequestParameterFromSerializerTest by matrixSuite {
         }
 
         "Json test $representation" {
-            val authnRequest = joseCompliantSerializer.encodeToString(
-                verifierOid4vp.createPlainAuthnRequest(reqOptions)
-            )
+            val authnRequest = verifierOid4vp.createAuthnRequest(reqOptions, byReference).getOrThrow()
+                .loadRequestObject.shouldNotBeNull().invoke(RequestObjectParameters()).getOrThrow()
             authnRequest.shouldNotContain(DifInputDescriptor::class.simpleName!!)
             val params = holderOid4vp.startAuthorizationResponsePreparation(authnRequest).getOrThrow().request
                 .shouldBeInstanceOf<RequestParametersFrom.Json<AuthenticationRequestParameters>>()
@@ -79,7 +80,10 @@ val AuthenticationRequestParameterFromSerializerTest by matrixSuite {
         }
 
         "DcApiUnsigned test $representation" {
-            val parameters = verifierOid4vp.createPlainAuthnRequest(reqOptions)
+            val parameters = joseCompliantSerializer.decodeFromString<AuthenticationRequestParameters>(
+                verifierOid4vp.createAuthnRequest(reqOptions, byReference).getOrThrow()
+                    .loadRequestObject.shouldNotBeNull().invoke(RequestObjectParameters()).getOrThrow()
+            )
             val authnRequest = RequestParametersFrom.OpenId4VpDcApiUnsigned(
                 parameters = parameters,
                 jsonString = joseCompliantSerializer.encodeToString(parameters),

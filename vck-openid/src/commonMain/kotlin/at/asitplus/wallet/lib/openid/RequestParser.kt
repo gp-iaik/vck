@@ -107,8 +107,8 @@ class RequestParser(
         val method = parameters.requestUriMethod?.toHttpMethod() ?: HttpMethod.Get
         // only the POST request to the request URI endpoint has a channel for these, see OpenID4VP 1.0, 5.10, and it
         // is built once per request, since it carries the key the verifier shall encrypt this very request to
-        val requestObjectParameters = if (method == HttpMethod.Post) buildRequestObjectParameters.invoke() else null
-        remoteResourceRetriever.invoke(parameters.resourceRetrieverInput(uri, method, requestObjectParameters))?.let {
+        val requestObjectParameters = if (method == HttpMethod.Post) buildRequestObjectParameters() else null
+        remoteResourceRetriever(parameters.resourceRetrieverInput(uri, method, requestObjectParameters))?.let {
             val expectedKeyId = requestObjectParameters.expectedEncryptionKeyId()
             val fromJwe = it.parseAsJweRequest(parent, expectedKeyId)
             // a non-null `expectedKeyId` means we advertised a key in `wallet_metadata`, i.e. this was the POST fetch,
@@ -182,7 +182,7 @@ class RequestParser(
             throw InvalidRequest("Encrypted request key does not match the key we advertised")
         if (decryptRequestObject == null)
             throw InvalidRequest("Verifier sent an encrypted request, we can't decrypt it")
-        val decrypted = decryptRequestObject.invoke(jwe).getOrElse {
+        val decrypted = decryptRequestObject(jwe).getOrElse {
             throw InvalidRequest("Decryption of request object failed", it)
         }
         return decrypted.payload.parseAsJwsRequest(parent, jwe.header)
