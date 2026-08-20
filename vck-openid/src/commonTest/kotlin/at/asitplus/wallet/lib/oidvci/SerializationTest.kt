@@ -88,7 +88,7 @@ val SerializationTest by matrixSuite {
             this shouldContain "dcql_query=" + "{\"credentials".encodeURLParameter()
         }
 
-        intermediateMap.decode<AuthenticationRequestParameters>() shouldBe params
+        intermediateMap.decode(AuthenticationRequestParameters.serializer()) shouldBe params
     }
 
     test("createAuthorizationRequest as POST") {
