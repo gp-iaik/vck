@@ -32,11 +32,15 @@ include(":rfc3986-uri-syntax")
 include(":sd-jwt-type-metadata")
 
 
-val signumFile = file("../signum/build.gradle.kts")
+val signumDir = System.getenv("SIGNUM_COMPOSITE_PATH")
+    ?.takeIf { it.isNotBlank() }
+    ?.let(::file)
+    ?: file("../signum")
+val signumFile = signumDir.resolve("build.gradle.kts")
 if (signumFile.exists()) {
     logger.warn("Detected signum in ${signumFile.absolutePath}.")
     logger.warn("Including signum as composite build.")
-    includeBuild("../signum")
+    includeBuild(signumDir)
 }
 
 buildscript {
