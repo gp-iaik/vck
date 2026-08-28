@@ -1,7 +1,11 @@
 # Changelog
 
 Release 8.0.0 (unreleased):
-- Build: Upgrade to the 20260722 conventions plugin and AGP 9, and migrate Android library targets to the new Kotlin Multiplatform Android library plugin API
+- Build: Upgrade to the 20260828 conventions plugin and AGP 9
+    - migrate Android library targets to the new Kotlin Multiplatform Android library plugin API
+    - no more conventions plugin submodule
+    - no more version catalog messing around
+    - no more build hacks
 - ETSI data classes:
     - Normalize decoded RFC 5646 language tags to lowercase instead of rejecting non-lowercase input
 - Credentials:
