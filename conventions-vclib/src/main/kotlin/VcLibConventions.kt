@@ -135,6 +135,7 @@ fun KotlinMultiplatformExtension.vckAndroid(minSdkOverride: Int? = null) {
                 "win32-x86/attach_hotspot_windows.dll",
                 "META-INF/versions/9/OSGI-INF/MANIFEST.MF",
                 "META-INF/licenses/*",
+                "META-INF/LICENSE.*",
                 //noinspection WrongGradleMethod
             ).forEach { resources.excludes.add(it) }
         }
