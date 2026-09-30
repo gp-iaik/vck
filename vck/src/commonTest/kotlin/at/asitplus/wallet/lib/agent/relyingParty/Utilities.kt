@@ -317,6 +317,9 @@ suspend fun WrpFixture.validateWrprc(
     jwsType: String = WRPRC_JWS_TYPE,
     revokedStatusIndex: Int = 1,
     accessCertValidation: WrpacValidationResult? = null,
+    statusListTokenResolver: StatusListTokenResolver = StatusListTokenResolver { statusListUrl ->
+        buildStatusListToken(statusListUrl, revokedIndex = revokedStatusIndex)
+    },
 ) = catching {
     val wrprcJws = signWrprc(signingKeyMaterial, payload, type = jwsType)
     val registrationCertificate: WrpRegistrationCertificate =
@@ -329,9 +332,6 @@ suspend fun WrpFixture.validateWrprc(
     )
 
     val resolvedAccessCertValidation = accessCertValidation ?: validateWrpac().getOrThrow()
-    val statusListTokenResolver = StatusListTokenResolver { statusListUrl ->
-        buildStatusListToken(statusListUrl, revokedIndex = revokedStatusIndex)
-    }
     val tokenStatusResolver = TokenStatusResolverImpl(statusListTokenResolver)
 
     WrprcValidator()(

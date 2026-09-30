@@ -34,9 +34,7 @@ object WrpAuthenticationRequestValidator {
                 val request = request.jwsTyped as? JwsTyped<JwsCompact, AuthenticationRequestParameters>
                     ?: throw IllegalArgumentException("Unable to cast request as JwsTyped<JwsCompact, AuthenticationRequestParameters>")
                 val clientId = requireNotNull(request.payload.clientId) { "No client_id in request" }
-                val verifierInfo = requireNotNull(request.payload.verifierInfo) { "No verifier_info in request" }
-                val jwsTyped = verifierInfo.mapNotNull { it.parseJws() }.singleOrNull()
-                    ?: throw IllegalArgumentException("Request must contain exactly one WRPRC")
+                val jwsTyped = request.payload.verifierInfo.singleRegistrationCertificate()
                 val registrationCertificate = WrpJwtRegistrationCertificate(jwsTyped = jwsTyped)
                 val dcqlQuery = requireNotNull(request.payload.dcqlQuery) { "No DCQL query in request" }
                 val wrpCredentialRequest = dcqlQuery.credentials.map { WrpDcqlCredentialQuery(it) }
@@ -52,9 +50,7 @@ object WrpAuthenticationRequestValidator {
             is RequestParametersFrom.OpenId4VpDcApiSigned -> {
                 val dcqlQuery = requireNotNull(request.parameters.dcqlQuery) { "No DCQL query in request" }
                 requireNotNull(request.parameters.clientId) { "No client_id in request" }
-                val verifierInfo = requireNotNull(request.parameters.verifierInfo) { "No verifier_info in request" }
-                val jwsTyped = verifierInfo.mapNotNull { it.parseJws() }.singleOrNull()
-                    ?: throw IllegalArgumentException("Request must contain exactly one WRPRC")
+                val jwsTyped = request.parameters.verifierInfo.singleRegistrationCertificate()
                 val registrationCertificate = WrpJwtRegistrationCertificate(jwsTyped = jwsTyped)
                 val wrpCredentialRequest = dcqlQuery.credentials.map { WrpDcqlCredentialQuery(it) }
                 val accessCertificate = WrpAccessCertificate(request.jwsTyped.jws.jwsHeader.certificateChain)
@@ -66,11 +62,11 @@ object WrpAuthenticationRequestValidator {
                 )
             }
 
-            is RequestParametersFrom.IsoMdocDcApi -> throw IllegalArgumentException(
+            is RequestParametersFrom.IsoMdocDcApi -> throw WrpValidationException.UnsupportedRequest(
                 "Session transcript is required for ISO mdoc reader authentication"
             )
 
-            else -> throw IllegalArgumentException("Request not supported for validation: $request")
+            else -> throw WrpValidationException.UnsupportedRequest("Request not supported for validation: $request")
         }
     }
 
@@ -82,11 +78,18 @@ object WrpAuthenticationRequestValidator {
         val accessCertificateChain = ReaderAuthenticationVerifier()(deviceRequest, sessionTranscript).getOrThrow()
         val registrationCertificate: Map<WrpRegistrationCertificate, List<WrpCredentialRequest>> =
             deviceRequest.docRequests.map { docRequest ->
-                val euWrprcBytes = requireNotNull(docRequest.itemsRequest.value.requestInfo?.euWrprc) {
-                    "Registration certificate missing in DocRequest $docRequest"
+                val euWrprcBytes = docRequest.itemsRequest.value.requestInfo?.euWrprc
+                    ?: throw WrpValidationException.RegistrationCertificateMissing(
+                        "Registration certificate missing in DocRequest $docRequest"
+                    )
+                val (euWrprc, payload) = catchingUnwrapped {
+                    coseCompliantSerializer.decodeFromByteArray<CoseSigned<ByteArray>>(euWrprcBytes)
+                        .let { it to parseCose(euWrprc = it) }
+                }.getOrElse {
+                    throw WrpValidationException.RegistrationCertificateMalformed(
+                        "Registration certificate in DocRequest could not be parsed: ${it.message}", it
+                    )
                 }
-                val euWrprc = coseCompliantSerializer.decodeFromByteArray<CoseSigned<ByteArray>>(euWrprcBytes)
-                val payload = parseCose(euWrprc = euWrprc)
                 val registrationCertificate = WrpCwtRegistrationCertificate(cose = euWrprc, payload = payload)
                 Pair(registrationCertificate, listOf(WrpCredentialRequest.WrpDocRequest(docRequest)))
             }.groupBy({ it.first }, { it.second })
@@ -96,6 +99,30 @@ object WrpAuthenticationRequestValidator {
             accessCertificate = WrpAccessCertificate(accessCertificateChain),
             registrationCertificate = registrationCertificate
         )
+    }
+
+    /**
+     * The single registration certificate in [this] `verifier_info`, failing with a [WrpValidationException] that
+     * tells a missing one apart from one that cannot be parsed, keeping the reason.
+     */
+    private fun List<VerifierInfo>?.singleRegistrationCertificate(): JwsCompactTyped<WrpPayload> {
+        if (this == null) throw WrpValidationException.RegistrationCertificateMissing("No verifier_info in request")
+        val registrationCertificates = filter { it.format.equals(REGISTRATION_CERT_FORMAT, ignoreCase = true) }
+        val registrationCertificate = when (registrationCertificates.size) {
+            0 -> throw WrpValidationException.RegistrationCertificateMissing(
+                "No $REGISTRATION_CERT_FORMAT in verifier_info of request"
+            )
+
+            1 -> registrationCertificates.single()
+            else -> throw WrpValidationException.RegistrationCertificateMalformed(
+                "Request must contain exactly one WRPRC"
+            )
+        }
+        return catchingUnwrapped { JwsCompactTyped<WrpPayload>(registrationCertificate.data) }.getOrElse {
+            throw WrpValidationException.RegistrationCertificateMalformed(
+                "Registration certificate could not be parsed: ${it.message}", it
+            )
+        }
     }
 
     fun VerifierInfo.parseJws() = catchingUnwrapped {

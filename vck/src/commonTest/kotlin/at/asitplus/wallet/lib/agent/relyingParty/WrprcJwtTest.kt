@@ -2,6 +2,7 @@ package at.asitplus.wallet.lib.agent.relyingParty
 
 import at.asitplus.etsi.relyingParty.WrpClaim
 import at.asitplus.testballoon.matrix.matrixSuite
+import at.asitplus.wallet.lib.agent.validation.StatusListTokenResolver
 import at.asitplus.wallet.lib.agent.EphemeralKeyWithoutCert
 import at.asitplus.wallet.lib.agent.KeyWithFixedCert
 import at.asitplus.wallet.lib.agent.TestCertificateAuthority
@@ -156,6 +157,22 @@ val WrprcJwtTest by matrixSuite {
 
         val result = fixture.validateWrprc(payload = payload, revokedStatusIndex = 0).getOrThrow()
         result.certificateValidation.all { it.value?.validStatusList == false }.shouldBe(true)
+        result.certificateValidation.all { it.value?.statusListResolved == true }.shouldBe(true)
+    }
+
+    "Unreachable status list fails status validation, but is told apart from a revoked status" {
+        val fixture = buildWrpFixture()
+        val payload = buildWrpPayload(fixture.wrpIdentifier)
+
+        val result = fixture.validateWrprc(
+            payload = payload,
+            statusListTokenResolver = StatusListTokenResolver { throw IllegalStateException("status list unreachable") },
+        ).getOrThrow()
+        result.certificateValidation.values.single().shouldNotBeNull().apply {
+            validStatusList shouldBe false
+            statusListResolved shouldBe false
+            validSignature shouldBe true
+        }
     }
 
     "Requesting more attributes than the WRPRC declares fails request validation (over-asking)" {

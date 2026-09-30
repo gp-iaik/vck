@@ -18,6 +18,8 @@ import at.asitplus.signum.indispensable.cosef.io.ByteStringWrapper
 import at.asitplus.signum.indispensable.cosef.io.coseCompliantSerializer
 import at.asitplus.signum.indispensable.cosef.toCoseKey
 import at.asitplus.testballoon.matrix.matrixSuite
+import at.asitplus.wallet.lib.agent.validation.relyingParty.WrpValidationException
+import at.asitplus.signum.indispensable.josef.io.joseCompliantSerializer
 import at.asitplus.wallet.lib.agent.EphemeralKeyWithSelfSignedCert
 import at.asitplus.wallet.lib.agent.validation.relyingParty.WrpAuthenticationRequestValidator
 import at.asitplus.wallet.lib.agent.validation.relyingParty.WrpRegistrationCertificate
@@ -29,9 +31,15 @@ import at.asitplus.wallet.lib.jws.JwsHeaderCertOrJwk
 import at.asitplus.wallet.lib.jws.SignJwt
 import io.github.z4kn4fein.semver.Version
 import io.kotest.matchers.shouldBe
+import io.ktor.http.Url
+import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.types.shouldBeInstanceOf
 import kotlinx.serialization.builtins.ByteArraySerializer
 import kotlinx.serialization.encodeToByteArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.JsonObject
 
 val WrpAuthenticationRequestValidatorTest by matrixSuite {
     "signed request is parsed into WRP validation data" {
@@ -103,6 +111,68 @@ val WrpAuthenticationRequestValidatorTest by matrixSuite {
         val result = WrpAuthenticationRequestValidator(isoRequest, transcript).getOrThrow()
         result.accessCertificate.certificateChain!!.first().encodeToDer() shouldBe wrpacSigner.getCertificate()!!
             .encodeToDer()
-        WrpAuthenticationRequestValidator(isoRequest).isFailure shouldBe true
+        WrpAuthenticationRequestValidator(isoRequest).exceptionOrNull()
+            .shouldBeInstanceOf<WrpValidationException.UnsupportedRequest>()
     }
+
+    "signed request without verifier_info has no registration certificate" {
+        val fixture = buildWrpFixture()
+
+        WrpAuthenticationRequestValidator(fixture.signedRequest(verifierInfo = null)).exceptionOrNull()
+            .shouldBeInstanceOf<WrpValidationException.RegistrationCertificateMissing>()
+    }
+
+    "signed request with verifier_info of another format has no registration certificate" {
+        val fixture = buildWrpFixture()
+
+        WrpAuthenticationRequestValidator(
+            fixture.signedRequest(verifierInfo = VerifierInfo("other_format", "attestation"))
+        ).exceptionOrNull()
+            .shouldBeInstanceOf<WrpValidationException.RegistrationCertificateMissing>()
+    }
+
+    "unparsable registration certificate is malformed, with the reason" {
+        val fixture = buildWrpFixture()
+        val payload = joseCompliantSerializer.encodeToJsonElement(buildWrpPayload(fixture.wrpIdentifier)).jsonObject
+        val withoutStatus = SignJwt<JsonObject>(fixture.wrprcSigningKeyMaterial, JwsHeaderCertOrJwk())(
+            type = WRPRC_JWS_TYPE,
+            payload = JsonObject(payload - "status"),
+            serializer = JsonObject.serializer(),
+        ).getOrThrow().jws.toString()
+
+        WrpAuthenticationRequestValidator(
+            fixture.signedRequest(verifierInfo = VerifierInfo(REGISTRATION_CERT_FORMAT, withoutStatus))
+        ).exceptionOrNull()
+            .shouldBeInstanceOf<WrpValidationException.RegistrationCertificateMalformed>()
+            .message.shouldNotBeNull().shouldContain("status")
+    }
+
+    "unsigned request is not supported" {
+        val fixture = buildWrpFixture()
+        val parameters = AuthenticationRequestParameters(
+            clientId = fixture.clientId,
+            dcqlQuery = (mdocDcqlRequest() as CredentialPresentationRequest.DCQLRequest).dcqlQuery,
+        )
+
+        WrpAuthenticationRequestValidator(
+            RequestParametersFrom.Uri(Url("https://wallet.example.com/?client_id=${fixture.clientId}"), parameters)
+        ).exceptionOrNull()
+            .shouldBeInstanceOf<WrpValidationException.UnsupportedRequest>()
+    }
+}
+
+private suspend fun WrpFixture.signedRequest(
+    verifierInfo: VerifierInfo?,
+): RequestParametersFrom.Jws<AuthenticationRequestParameters> {
+    val parameters = AuthenticationRequestParameters(
+        clientId = clientId,
+        verifierInfo = verifierInfo?.let { nonEmptyListOf(it) },
+        dcqlQuery = (mdocDcqlRequest() as CredentialPresentationRequest.DCQLRequest).dcqlQuery,
+    )
+    val signedRequest = SignJwt<AuthenticationRequestParameters>(wrprcSigningKeyMaterial, JwsHeaderCertOrJwk())(
+        type = "oauth-authz-req+jwt",
+        payload = parameters,
+        serializer = AuthenticationRequestParameters.serializer(),
+    ).getOrThrow()
+    return RequestParametersFrom.Jws(jws = signedRequest.jws, parameters = parameters)
 }

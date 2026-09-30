@@ -20,6 +20,9 @@ import io.matthewnelson.encoding.core.Encoder.Companion.encodeToString
  *  - Certificate trust anchors
  *  - Linkage to the presentation request (OID4VP only)
  *  - Identifier is either legal or natural person
+ *
+ * Only a missing certificate chain fails the validation. Every other finding is reported in [WrpacValidationResult],
+ * so that the registration certificate can still be validated and shown, e.g. for an untrusted access certificate.
  **/
 object WrpacValidator {
 
@@ -32,20 +35,25 @@ object WrpacValidator {
         }
         Napier.d("validating request x5c, count=${certificateChain.size}")
 
-        val validLinkage = validationData.clientId?.let { clientId ->
-            validateX509HashBinding(clientId, certificateChain).getOrThrow()
-        } ?: true
+        val linkageError = validationData.clientId?.let { clientId ->
+            validateX509HashBinding(clientId, certificateChain).exceptionOrNull()
+        }?.also { Napier.w("Access certificate is not bound to client_id", it) }
 
-        WrpChainValidator(
+        val chainError = WrpChainValidator(
             chain = certificateChain,
             certificateTrustAnchors = certificateTrustAnchors
-        ).getOrThrow()
+        ).exceptionOrNull()?.also { Napier.w("Access certificate chain is not valid", it) }
 
-        val identifierResult = certificateChain.leaf.getWrpIdentifier().getOrThrow()
+        val identifierResult = certificateChain.leaf.getWrpIdentifier()
+            .onFailure { Napier.w("Access certificate has no identifier", it) }
+            .getOrNull()
         WrpacValidationResult(
             chain = certificateChain,
             identifierResult = identifierResult,
-            validLinkage = validLinkage
+            validLinkage = linkageError == null,
+            validChain = chainError == null,
+            linkageError = linkageError,
+            chainError = chainError,
         )
     }
 

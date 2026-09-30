@@ -15,6 +15,7 @@ import at.asitplus.signum.indispensable.pki.leaf
 import at.asitplus.wallet.lib.agent.TrustedCertificates
 import at.asitplus.wallet.lib.agent.validation.TimeScope
 import at.asitplus.wallet.lib.agent.validation.TokenStatusResolver
+import at.asitplus.wallet.lib.agent.validation.toTokenStatusValidator
 import at.asitplus.wallet.lib.agent.validation.relyingParty.WrpChainValidator
 import at.asitplus.wallet.lib.agent.validation.relyingParty.WrpRegistrationCertificate
 import at.asitplus.wallet.lib.agent.validation.relyingParty.WrpRequestData
@@ -23,7 +24,7 @@ import at.asitplus.wallet.lib.agent.validation.relyingParty.registrationCertific
 import at.asitplus.wallet.lib.agent.validation.relyingParty.registrationCertificate.WrprcValidator.Constants.WRPRC_JWS_HEADER
 import at.asitplus.wallet.lib.cbor.VerifyCoseSignatureWithKey
 import at.asitplus.wallet.lib.data.rfc.tokenStatusList.StatusListInfo
-import at.asitplus.wallet.lib.data.rfc.tokenStatusList.primitives.TokenStatus
+import at.asitplus.wallet.lib.data.rfc.tokenStatusList.primitives.TokenStatusValidationResult
 import at.asitplus.wallet.lib.data.rfc3986.UniformResourceIdentifier
 import at.asitplus.wallet.lib.jws.VerifyJwsSignature
 import io.github.aakira.napier.Napier
@@ -123,7 +124,7 @@ class WrprcValidator(
         val statusList = certificate.payload.status.statusList.let {
             StatusListInfo(it.idx, UniformResourceIdentifier(it.uri))
         }
-        val validStatusList = validateWrpStatusList(statusList, tokenStatusResolver)
+        val status = validateWrpStatusList(statusList, tokenStatusResolver)
         val validLinkage = validateWrpIdentifierLinkage(identifierResult, certificate.payload)
 
         WrpRegistrationCertificateValidation(
@@ -132,7 +133,8 @@ class WrprcValidator(
             validChain = validChain,
             validPayload = validPayload,
             validLinkage = validLinkage,
-            validStatusList = validStatusList
+            validStatusList = status is TokenStatusValidationResult.Valid,
+            statusListResolved = status !is TokenStatusValidationResult.Rejected,
         )
     }
 
@@ -155,7 +157,7 @@ class WrprcValidator(
         val statusList = jwsTyped.payload.status.statusList.let {
             StatusListInfo(it.idx, UniformResourceIdentifier(it.uri))
         }
-        val validStatusList = validateWrpStatusList(statusList, tokenStatusResolver)
+        val status = validateWrpStatusList(statusList, tokenStatusResolver)
 
         WrpRegistrationCertificateValidation(
             validHeader = validHeader,
@@ -163,7 +165,8 @@ class WrprcValidator(
             validChain = validChain,
             validPayload = validPayload,
             validLinkage = validLinkage,
-            validStatusList = validStatusList
+            validStatusList = status is TokenStatusValidationResult.Valid,
+            statusListResolved = status !is TokenStatusValidationResult.Rejected,
         )
     }
 
@@ -246,20 +249,18 @@ class WrprcValidator(
         return true
     }
 
+    /** Tells a status that could not be obtained, e.g. from an unreachable status list, apart from an invalid one. */
     private suspend fun validateWrpStatusList(
         statusList: StatusListInfo,
         tokenStatusResolver: TokenStatusResolver,
-    ) = if (!statusList.loadTokenStatus(tokenStatusResolver).isValid) {
-        Napier.w("Token status is not valid")
-        false
-    } else true
-
-    private suspend fun StatusListInfo.loadTokenStatus(
-        tokenStatusResolver: TokenStatusResolver
-    ) = tokenStatusResolver.invoke(this).getOrElse {
-        Napier.w("Unable to obtain token status.", it)
-        TokenStatus.Invalid
+    ) = tokenStatusResolver.toTokenStatusValidator()(statusList).also {
+        when (it) {
+            is TokenStatusValidationResult.Rejected -> Napier.w("Unable to obtain token status.", it.throwable)
+            is TokenStatusValidationResult.Invalid -> Napier.w("Token status is not valid: ${it.tokenStatus}")
+            is TokenStatusValidationResult.Valid -> Unit
+        }
     }
+
 
     /**
      * Validates the linkage between access certificate and registration certificate.

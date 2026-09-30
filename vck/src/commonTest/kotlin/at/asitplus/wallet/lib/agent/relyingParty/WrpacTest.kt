@@ -37,7 +37,7 @@ val WrpacTest by matrixSuite {
         ).exceptionOrNull().shouldNotBeNull().message.shouldContain("is not signed by")
     }
 
-    "Wrong x509 hash in clientId" {
+    "Wrong x509 hash in clientId is reported, not thrown" {
         val fixture = buildWrpFixture()
         val clientId = "x509_hash:wrong"
 
@@ -48,7 +48,39 @@ val WrpacTest by matrixSuite {
                 registrationCertificate = emptyMap(),
             ),
             certificateTrustAnchors = fixture.trustAnchors
-        ).exceptionOrNull().shouldNotBeNull().message.shouldContain("x509_hash binding failed")
+        ).getOrThrow().apply {
+            validLinkage shouldBe false
+            linkageError.shouldNotBeNull().message.shouldContain("x509_hash binding failed")
+            validChain shouldBe true
+            isValid() shouldBe false
+        }
+    }
+
+    "Valid WRPAC is reported as valid" {
+        buildWrpFixture().validateWrpac().getOrThrow().apply {
+            validLinkage shouldBe true
+            validChain shouldBe true
+            identifierResult.shouldNotBeNull()
+            isValid() shouldBe true
+        }
+    }
+
+    "Untrusted WRPAC chain is reported, not thrown, so that the WRPRC can still be validated" {
+        val fixture = buildWrpFixture()
+
+        WrpacValidator(
+            WrpRequestData(
+                clientId = fixture.clientId,
+                accessCertificate = WrpAccessCertificate(fixture.wrpacChain),
+                registrationCertificate = emptyMap(),
+            ),
+            certificateTrustAnchors = TrustedCertificates { setOf(TestCertificateAuthority(name = "Other CA").certificate) },
+        ).getOrThrow().apply {
+            validChain shouldBe false
+            chainError.shouldNotBeNull()
+            validLinkage shouldBe true
+            identifierResult.shouldNotBeNull()
+        }
     }
 
     "Provider certificate expired invalidates the chain" {
@@ -235,11 +267,12 @@ val WrpacTest by matrixSuite {
         result.shouldNotBeNull()
     }
 
-    "No WRP identifier attribute yields an exception" {
+    "No WRP identifier attribute is reported as a missing identifier" {
         val fixture = buildWrpFixture(wrpacIdentifier = null)
 
-        val result = fixture.validateWrpac()
-        result.exceptionOrNull()
-            .shouldNotBeNull().message.shouldContain(("Unable to extract access certificate identifier"))
+        fixture.validateWrpac().getOrThrow().apply {
+            identifierResult shouldBe null
+            isValid() shouldBe false
+        }
     }
 }
